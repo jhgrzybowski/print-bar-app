@@ -3,22 +3,23 @@
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  padding: 12px;
+  padding: 0;
 }
 
 .appShell {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr) 260px;
+  grid-template-columns: var(--rail-left) minmax(0, 1fr) var(--rail-right);
   width: 100%;
-  height: calc(100vh - 24px);
-  height: calc(100dvh - 24px);
+  height: 100vh;
+  height: 100dvh;
   min-height: 0;
   margin: 0 auto;
   overflow: hidden;
   background: var(--shell-bg);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-shell);
-  box-shadow: 0 2px 8px var(--shadow-soft);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .drawerOverlay {
@@ -26,7 +27,8 @@
   inset: 0;
   z-index: 15;
   display: none;
-  background: oklch(0.2 0.01 70 / 0.36);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(2px);
 }
 
 .drawerOverlay.isVisible {
@@ -37,12 +39,14 @@
   display: flex;
   min-height: 0;
   overflow: hidden;
-  padding: 18px 14px 14px;
+  padding: 20px 18px 16px;
   flex-direction: column;
   gap: 18px;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--sidebar-border);
   color: var(--text-inverse);
+  box-shadow: inset -1px 0 0 var(--sidebar-edge-highlight);
+  transition: transform 220ms var(--ease-out-soft);
 }
 
 .mobilePanelHeader {
@@ -62,9 +66,10 @@
   height: 34px;
   place-items: center;
   color: var(--accent-soft);
-  background: oklch(0.18 0.028 276);
-  border: 1px solid oklch(0.36 0.028 276);
+  background: var(--sidebar-icon-bg);
+  border: 1px solid var(--sidebar-icon-border);
   border-radius: var(--radius-control);
+  box-shadow: var(--sidebar-icon-shadow);
 }
 
 .printerCopy {
@@ -151,16 +156,17 @@
 .printerMeta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
 }
 
 .printerMeta div {
   min-width: 0;
   padding: 9px;
-  background: var(--sidebar-bg-strong);
-  border: 1px solid oklch(0.33 0.025 276);
+  background: var(--sidebar-card-bg);
+  border: 1px solid var(--sidebar-card-border);
   border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 0 var(--sidebar-inner-highlight);
 }
 
 .printerMeta dt {
@@ -197,7 +203,7 @@
 
 .flowItem {
   width: 100%;
-  padding: 10px;
+  padding: 11px 10px;
   color: inherit;
   text-align: left;
   background: transparent;
@@ -210,13 +216,14 @@
 }
 
 .flowItem:hover {
-  background: oklch(0.29 0.03 276);
-  border-color: oklch(0.38 0.027 276);
+  background: var(--sidebar-hover-bg);
+  border-color: var(--sidebar-hover-border);
 }
 
 .flowItem.isActive {
   background: var(--sidebar-active);
   border-color: color-mix(in oklch, var(--accent) 36%, var(--sidebar-border));
+  box-shadow: inset 0 1px 0 var(--sidebar-active-highlight);
 }
 
 .flowTopline {
@@ -246,16 +253,16 @@
 
 .flowState-ready,
 .flowState-printed {
-  color: oklch(0.82 0.12 150);
+  color: var(--ready-text);
 }
 
 .flowState-queued {
-  color: oklch(0.84 0.13 78);
+  color: var(--warning-text);
 }
 
 .flowState-cancelled,
 .flowState-error {
-  color: oklch(0.78 0.12 24);
+  color: var(--error-text);
 }
 
 .flowMeta {
@@ -270,8 +277,8 @@
 }
 
 .profileArea {
-  padding-top: 12px;
-  border-top: 1px solid oklch(0.36 0.025 276);
+  padding-top: 14px;
+  border-top: 1px solid var(--sidebar-divider);
 }
 
 .profileArea label {
@@ -298,6 +305,7 @@
   border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 700;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 60%, transparent);
 }
 
 .profileControl select {
@@ -306,7 +314,7 @@
   height: 32px;
   color: var(--text-inverse);
   background: var(--sidebar-bg-strong);
-  border: 1px solid oklch(0.38 0.025 276);
+  border: 1px solid var(--sidebar-hover-border);
   border-radius: var(--radius-control);
   font-size: 12px;
 }
@@ -315,8 +323,14 @@
   display: grid;
   min-width: 0;
   min-height: 0;
+  --workspace-inline: max(
+    var(--workspace-gutter),
+    calc((100% - var(--workspace-measure)) / 2)
+  );
   grid-template-rows: auto minmax(0, 1fr) auto;
-  background: var(--main-bg);
+  background:
+    radial-gradient(620px 300px at 82% 0%, var(--workspace-glow), transparent 64%),
+    var(--main-bg);
 }
 
 .mobileTopbar {
@@ -325,11 +339,13 @@
 
 .workspaceHeader {
   display: flex;
-  padding: 18px 22px 14px;
+  padding: 20px var(--workspace-inline) 14px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid var(--border-soft);
+  background: var(--workspace-header-bg);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 78%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .workspaceTitle {
@@ -382,9 +398,9 @@
 .workspaceBody {
   display: grid;
   min-height: 0;
-  padding: 14px 22px;
+  padding: 16px var(--workspace-inline) 18px;
   align-content: start;
-  gap: 12px;
+  gap: 14px;
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -396,9 +412,21 @@
   align-content: center;
   gap: 8px;
   color: var(--text-secondary);
-  background: var(--panel-bg);
+  background: var(--glass-bg);
   border: 1px dashed color-mix(in oklch, var(--accent-soft) 58%, var(--border-soft));
   border-radius: var(--radius-control);
+  box-shadow:
+    var(--shadow-panel),
+    inset 0 1px 0 var(--surface-highlight);
+  transition:
+    background-color 180ms var(--ease-out-soft),
+    border-color 180ms var(--ease-out-soft),
+    box-shadow 180ms var(--ease-out-soft);
+}
+
+.uploadZone:hover {
+  background: color-mix(in oklch, var(--accent-bg) 30%, var(--glass-bg-strong));
+  border-color: color-mix(in oklch, var(--accent-soft) 72%, var(--border-soft));
 }
 
 .uploadZone svg {
@@ -418,12 +446,18 @@
 
 .filePreview {
   display: grid;
-  grid-template-columns: minmax(200px, 300px) minmax(260px, 1fr);
-  gap: 14px;
-  padding: 14px;
-  background: var(--panel-bg);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  width: min(100%, 760px);
+  justify-self: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px 16px 18px;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-panel);
+  box-shadow:
+    var(--shadow-panel),
+    inset 0 1px 0 var(--surface-highlight);
+  backdrop-filter: blur(14px);
 }
 
 .fileSummary {
@@ -431,6 +465,7 @@
   grid-template-columns: 38px minmax(0, 1fr);
   gap: 12px;
   align-self: start;
+  justify-self: stretch;
 }
 
 .fileIcon {
@@ -442,6 +477,7 @@
   background: var(--accent-bg);
   border: 1px solid color-mix(in oklch, var(--accent-soft) 45%, var(--border-soft));
   border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 68%, transparent);
 }
 
 .fileCopy {
@@ -464,67 +500,115 @@
 
 .previewStage {
   display: grid;
-  min-height: 205px;
+  min-height: clamp(286px, 37vh, 390px);
+  padding: 6px 0 10px;
   place-items: center;
-  background: oklch(0.965 0.006 80);
-  border: 1px solid var(--border-soft);
+  background: transparent;
+  border: 0;
   border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+.previewCanvas {
+  display: grid;
+  width: min(100%, 310px);
+  justify-items: center;
+  gap: 10px;
 }
 
 .paperPreview {
   display: grid;
-  width: min(74%, 218px);
-  min-height: 178px;
-  padding: 14px;
-  grid-template-rows: auto 1fr auto;
-  background: oklch(0.995 0.004 82);
+  width: auto;
+  height: clamp(236px, 33vh, 344px);
+  aspect-ratio: 210 / 297;
+  padding: 8%;
+  background: var(--paper-bg);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
-  box-shadow: 0 2px 8px var(--shadow-soft);
+  box-shadow: var(--shadow-paper);
 }
 
 .paperPreview-landscape {
-  width: min(82%, 262px);
-  min-height: 152px;
+  width: min(100%, 328px);
+  height: auto;
+  aspect-ratio: 297 / 210;
 }
 
-.paperHeader,
-.paperFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.paperLines {
+.paperContent {
   display: grid;
-  align-content: center;
-  gap: 8px;
+  height: 100%;
+  align-content: start;
+  gap: 5.8%;
 }
 
-.paperLines i {
+.paperContent i {
   display: block;
-  height: 8px;
-  background: oklch(0.9 0.006 80);
-  border-radius: 3px;
+  height: 5px;
+  background: var(--paper-ink-soft);
+  border-radius: 2px;
 }
 
-.paperLines i:nth-child(2) {
-  width: 82%;
+.paperContent i:first-child {
+  width: 52%;
+  height: 11px;
+  margin-bottom: 4%;
+  background: var(--paper-ink);
 }
 
-.paperLines i:nth-child(3) {
-  width: 92%;
+.paperContent i:nth-child(2) {
+  width: 88%;
 }
 
-.paperLines i:nth-child(4) {
-  width: 68%;
+.paperContent i:nth-child(3) {
+  width: 94%;
 }
 
-.paperLines i:nth-child(5) {
+.paperContent i:nth-child(4) {
   width: 76%;
+}
+
+.paperContent i:nth-child(5) {
+  width: 90%;
+}
+
+.paperContent i:nth-child(6) {
+  width: 64%;
+}
+
+.paperContent i:nth-child(7) {
+  width: 82%;
+  margin-top: auto;
+}
+
+.paperContent i:nth-child(8) {
+  width: 44%;
+}
+
+.paperPreview-landscape .paperContent {
+  grid-template-columns: 1fr 0.62fr;
+  gap: 8px 12px;
+}
+
+.paperPreview-landscape .paperContent i:first-child {
+  grid-column: 1 / -1;
+  width: 42%;
+  margin-bottom: 0;
+}
+
+.paperPreview-landscape .paperContent i:nth-child(7) {
+  margin-top: 0;
+}
+
+.previewScaleNote {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .assistantMessage {
@@ -532,9 +616,13 @@
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 10px;
   padding: 10px 12px;
-  background: color-mix(in oklch, var(--accent-bg) 48%, var(--panel-bg));
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-bg) 32%, var(--glass-bg-strong));
+  border: 1px solid color-mix(in oklch, var(--accent-soft) 26%, var(--border-soft));
+  border-radius: var(--radius-panel);
+  box-shadow:
+    0 1px 0 var(--surface-highlight),
+    inset 0 1px 0 var(--surface-highlight);
+  backdrop-filter: blur(12px);
 }
 
 .assistantMessage svg {
@@ -561,9 +649,13 @@
 
 .timeline {
   padding: 12px 14px 2px;
-  background: var(--panel-bg);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--panel-bg) 82%, transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-panel);
+  box-shadow:
+    0 1px 0 var(--surface-highlight),
+    inset 0 1px 0 var(--surface-highlight);
+  backdrop-filter: blur(12px);
 }
 
 .sectionHeader {
@@ -601,9 +693,10 @@
   height: 24px;
   place-items: center;
   color: var(--text-secondary);
-  background: var(--main-bg);
+  background: var(--surface-sunken);
   border: 1px solid var(--border-soft);
   border-radius: 50%;
+  box-shadow: var(--shadow-control);
 }
 
 .timelineContent {
@@ -657,9 +750,10 @@
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) 38px;
   gap: 8px;
-  padding: 12px 22px 14px;
-  background: var(--main-bg);
-  border-top: 1px solid var(--border-soft);
+  padding: 12px var(--workspace-inline) 16px;
+  background: var(--toolbar-bg);
+  border-top: 1px solid color-mix(in oklch, var(--border-soft) 78%, transparent);
+  backdrop-filter: blur(14px);
 }
 
 .iconButton,
@@ -672,22 +766,27 @@
   justify-content: center;
   border-radius: var(--radius-control);
   transition:
-    background-color 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
+    background-color 180ms var(--ease-out-soft),
+    border-color 180ms var(--ease-out-soft),
+    box-shadow 180ms var(--ease-out-soft),
+    color 180ms var(--ease-out-soft);
 }
 
 .iconButton {
   width: 36px;
   height: 36px;
   color: var(--text-secondary);
-  background: var(--panel-bg);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--border-soft);
+  box-shadow:
+    0 1px 0 var(--surface-highlight),
+    var(--shadow-control);
 }
 
 .iconButton:hover {
   color: var(--text-primary);
   border-color: var(--border-strong);
+  background: var(--panel-solid);
 }
 
 .commandBar input {
@@ -695,10 +794,11 @@
   height: 38px;
   padding: 0 12px;
   color: var(--text-primary);
-  background: var(--panel-bg);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
   font-size: 13px;
+  box-shadow: var(--shadow-control);
 }
 
 .commandBar input::placeholder {
@@ -711,6 +811,9 @@
   color: var(--accent-text);
   background: var(--accent-bg);
   border: 1px solid color-mix(in oklch, var(--accent-soft) 52%, var(--border-soft));
+  box-shadow:
+    0 1px 0 var(--surface-highlight),
+    var(--shadow-send);
 }
 
 .sendButton:hover {
@@ -723,17 +826,20 @@
   flex-direction: column;
   overflow: hidden;
   padding: 0;
-  background: var(--panel-bg);
-  border-left: 1px solid var(--border-soft);
+  background: var(--glass-bg-strong);
+  border-left: 1px solid var(--glass-border);
+  box-shadow: inset 1px 0 0 var(--surface-highlight);
+  backdrop-filter: blur(16px);
+  transition: transform 220ms var(--ease-out-soft);
 }
 
 .preferencesHeader {
   display: flex;
-  padding: 18px 14px 12px;
+  padding: 20px 18px 12px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
 }
 
 .preferencesHeader h2 {
@@ -754,17 +860,17 @@
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  gap: 10px;
+  gap: 12px;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 12px 14px;
+  padding: 14px 18px;
 }
 
 .settingsGroup {
   display: grid;
-  gap: 7px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-soft);
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 78%, transparent);
 }
 
 .settingsGroup-last {
@@ -796,6 +902,7 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
   font-size: 13px;
+  box-shadow: var(--shadow-control);
 }
 
 .segmentedControl {
@@ -803,9 +910,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   padding: 3px;
-  background: var(--main-bg);
+  background: var(--surface-sunken);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
+  box-shadow: var(--shadow-control);
 }
 
 .segmentedControl button {
@@ -826,6 +934,7 @@
   color: var(--accent-text);
   background: var(--accent-bg);
   border-color: color-mix(in oklch, var(--accent-soft) 48%, var(--border-soft));
+  box-shadow: 0 1px 0 var(--surface-highlight);
 }
 
 .checkboxField {
@@ -846,9 +955,10 @@
   display: grid;
   gap: 3px;
   padding: 10px;
-  background: var(--main-bg);
+  background: var(--surface-sunken);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
+  box-shadow: var(--shadow-control);
 }
 
 .printPlan strong {
@@ -861,25 +971,35 @@
 .preferenceActions {
   display: grid;
   gap: 10px;
-  padding: 12px 14px 14px;
-  background: var(--panel-bg);
-  border-top: 1px solid var(--border-soft);
+  padding: 14px 18px 16px;
+  background: var(--toolbar-bg);
+  border-top: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
+  backdrop-filter: blur(14px);
 }
 
 .primaryPrintButton {
   min-height: 40px;
   gap: 8px;
-  color: var(--accent-text);
-  background: var(--accent);
-  border: 1px solid color-mix(in oklch, var(--accent) 82%, var(--border-strong));
+  color: var(--text-on-accent);
+  background: color-mix(in oklch, var(--accent) 74%, var(--text-primary));
+  border: 1px solid color-mix(in oklch, var(--accent) 66%, var(--text-primary));
   font-size: 14px;
   font-weight: 700;
+  box-shadow:
+    0 8px 18px color-mix(in oklch, var(--accent) 18%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 42%, transparent);
+}
+
+.primaryPrintButton:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent) 82%, var(--text-primary));
+  border-color: color-mix(in oklch, var(--accent) 74%, var(--text-primary));
 }
 
 .primaryPrintButton:disabled {
   color: var(--text-muted);
-  background: var(--main-bg);
+  background: var(--surface-sunken);
   border-color: var(--border-soft);
+  box-shadow: var(--shadow-control);
 }
 
 .secondaryActions {
@@ -893,10 +1013,13 @@
   gap: 7px;
   min-height: 34px;
   color: var(--text-secondary);
-  background: var(--panel-bg);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--border-soft);
   font-size: 12px;
   font-weight: 600;
+  box-shadow:
+    0 1px 0 var(--surface-highlight),
+    var(--shadow-control);
 }
 
 .secondaryActions button:hover,
@@ -911,7 +1034,7 @@
 
 @media (max-width: 1180px) {
   .appShell {
-    grid-template-columns: 230px minmax(0, 1fr);
+    grid-template-columns: var(--rail-left) minmax(0, 1fr);
   }
 
   .mobileTopbar {
@@ -920,8 +1043,9 @@
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
-    background: var(--main-bg);
-    border-bottom: 1px solid var(--border-soft);
+    background: var(--toolbar-bg);
+    border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
+    backdrop-filter: blur(14px);
   }
 
   .mobileTopbar .textIconButton:first-child {
@@ -930,14 +1054,15 @@
 
   .preferencesPanel {
     position: fixed;
-    top: 12px;
-    bottom: 12px;
-    right: 12px;
+    top: 0;
+    bottom: 0;
+    right: 0;
     z-index: 20;
-    width: min(300px, calc(100vw - 24px));
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-control);
-    box-shadow: 0 2px 8px var(--shadow-soft);
+    width: min(var(--rail-right), calc(100vw - 24px));
+    border: 1px solid var(--glass-border);
+    border-right: 0;
+    border-radius: 0;
+    box-shadow: var(--shadow-drawer);
     transform: translateX(calc(100% + 20px));
   }
 
@@ -982,8 +1107,8 @@
     bottom: 0;
     left: 0;
     z-index: 20;
-    width: min(300px, calc(100vw - 24px));
-    box-shadow: 0 2px 8px var(--shadow-soft);
+    width: min(320px, calc(100vw - 20px));
+    box-shadow: var(--shadow-drawer);
     transform: translateX(calc(-100% - 20px));
   }
 
@@ -995,7 +1120,7 @@
     top: 0;
     bottom: 0;
     right: 0;
-    width: min(320px, calc(100vw - 24px));
+    width: min(360px, calc(100vw - 20px));
     border-radius: 0;
   }
 
@@ -1023,7 +1148,20 @@
   }
 
   .previewStage {
-    min-height: 220px;
+    min-height: 320px;
+    padding: 12px;
+  }
+
+  .previewCanvas {
+    width: min(100%, 320px);
+  }
+
+  .paperPreview {
+    height: clamp(220px, 38vh, 324px);
+  }
+
+  .paperPreview-landscape {
+    width: min(100%, 312px);
   }
 
   .workspaceTitle h1 {
@@ -1032,5 +1170,19 @@
 
   .commandBar {
     padding: 12px 16px 14px;
+  }
+
+  .mobileTopbar .textIconButton,
+  .mobilePanelHeader .iconButton {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
 }

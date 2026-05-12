@@ -628,6 +628,13 @@ function FilePreview({ chat }: { chat: PrintChat }) {
     return null;
   }
 
+  const pageRange =
+    chat.settings.pageRange === "all"
+      ? "all pages"
+      : `pages ${chat.settings.pageRange}`;
+  const previewLabel =
+    `${chat.settings.paperSize} ${chat.settings.orientation} preview, ${pageRange}`;
+
   return (
     <section className="filePreview" aria-label="Selected file preview">
       <div className="fileSummary">
@@ -644,23 +651,27 @@ function FilePreview({ chat }: { chat: PrintChat }) {
       </div>
 
       <div className="previewStage">
-        <div className={`paperPreview paperPreview-${chat.settings.orientation}`}>
-          <div className="paperHeader">
-            <span>{file.mimeType === "application/pdf" ? "PDF" : "File"}</span>
-            <span>{chat.settings.paperSize}</span>
+        <div className="previewCanvas">
+          <div
+            className={`paperPreview paperPreview-${chat.settings.orientation}`}
+            role="img"
+            aria-label={previewLabel}
+          >
+            <div className="paperContent" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
           </div>
-          <div className="paperLines" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
-          <div className="paperFooter">
+          <div className="previewScaleNote">
+            {chat.settings.paperSize} / {chat.settings.orientation} /{" "}
             {chat.settings.copies} copy{chat.settings.copies === 1 ? "" : "ies"} /{" "}
-            {chat.settings.pageRange === "all"
-              ? "all pages"
-              : `pages ${chat.settings.pageRange}`}
+            {pageRange}
           </div>
         </div>
       </div>
