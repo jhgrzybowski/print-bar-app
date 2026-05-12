@@ -1,13 +1,13 @@
 .appFrame {
   min-height: 100vh;
-  padding: 16px;
+  padding: 12px;
 }
 
 .appShell {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr) 260px;
-  width: min(1320px, 100%);
-  min-height: calc(100vh - 32px);
+  width: 100%;
+  min-height: calc(100vh - 24px);
   margin: 0 auto;
   overflow: hidden;
   background: var(--shell-bg);
