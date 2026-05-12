@@ -1,1 +1,1 @@
-# Print Bar App\n\nA web app for local printing.
+# Print Bar App  web app for local printing.
