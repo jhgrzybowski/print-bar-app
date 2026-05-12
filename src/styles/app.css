@@ -842,6 +842,8 @@
 
 .assistantMessage {
   display: grid;
+  width: min(100%, 760px);
+  justify-self: center;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 10px;
   padding: 10px 12px;
