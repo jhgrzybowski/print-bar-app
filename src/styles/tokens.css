@@ -4,21 +4,23 @@
   color: var(--text-primary);
   background: var(--app-bg);
 
-  --app-bg: oklch(0.948 0.014 64);
-  --ambient-glow: oklch(0.8 0.12 42 / 0.22);
+  --app-bg: oklch(0.936 0.018 66);
+  --ambient-glow: oklch(0.78 0.13 42 / 0.24);
   --workspace-glow: color-mix(in oklch, var(--accent-bg) 42%, transparent);
   --overlay-bg: oklch(0.2 0.01 70 / 0.3);
-  --shell-bg: oklch(0.982 0.006 74 / 0.78);
-  --main-bg: oklch(0.966 0.008 78);
-  --panel-bg: oklch(0.99 0.005 82 / 0.82);
-  --panel-solid: oklch(0.988 0.005 82);
-  --glass-bg: oklch(0.99 0.005 82 / 0.66);
-  --glass-bg-strong: oklch(0.988 0.005 82 / 0.88);
-  --toolbar-bg: oklch(0.972 0.007 78 / 0.72);
-  --glass-border: oklch(0.98 0.006 82 / 0.68);
-  --surface-sunken: oklch(0.942 0.008 78);
-  --surface-highlight: oklch(0.998 0.004 82 / 0.72);
-  --workspace-header-bg: oklch(0.982 0.006 78 / 0.46);
+  --shell-bg: oklch(0.974 0.008 76);
+  --main-bg: oklch(0.956 0.01 76);
+  --panel-bg: oklch(0.972 0.007 78);
+  --panel-solid: oklch(0.982 0.006 80);
+  --glass-bg: oklch(0.976 0.007 80);
+  --glass-bg-strong: oklch(0.982 0.006 80);
+  --toolbar-bg: oklch(0.966 0.008 78);
+  --glass-border: oklch(0.9 0.008 78);
+  --surface-raised: oklch(0.986 0.006 80);
+  --surface-soft: oklch(0.972 0.008 78);
+  --surface-sunken: oklch(0.93 0.01 76);
+  --surface-highlight: oklch(0.998 0.004 82 / 0.9);
+  --workspace-header-bg: oklch(0.966 0.008 78);
   --sidebar-bg: oklch(0.245 0.028 276);
   --sidebar-bg-strong: oklch(0.205 0.028 276);
   --sidebar-active: oklch(0.31 0.032 276);
@@ -43,19 +45,35 @@
   --text-muted: oklch(0.63 0.01 76);
   --text-inverse: oklch(0.95 0.006 80);
   --text-inverse-muted: oklch(0.74 0.018 280);
-  --field-bg: oklch(0.982 0.005 80);
-  --paper-bg: oklch(0.995 0.004 82);
+  --field-bg: oklch(0.958 0.008 78);
+  --paper-bg: oklch(0.992 0.005 82);
   --paper-ink: oklch(0.78 0.008 80);
   --paper-ink-soft: oklch(0.88 0.006 80);
+  --shadow-shell:
+    28px 30px 72px oklch(0.42 0.018 68 / 0.13),
+    -16px -16px 42px oklch(0.998 0.004 82 / 0.72);
   --shadow-panel:
-    7px 9px 20px oklch(0.35 0.012 70 / 0.07),
-    -5px -6px 14px oklch(1 0.004 82 / 0.72);
+    12px 14px 30px oklch(0.42 0.016 70 / 0.09),
+    -10px -10px 24px oklch(0.998 0.004 82 / 0.74);
+  --shadow-soft:
+    8px 10px 22px oklch(0.42 0.014 70 / 0.075),
+    -7px -7px 18px oklch(0.998 0.004 82 / 0.68);
   --shadow-control:
-    inset 1px 1px 2px oklch(0.38 0.012 70 / 0.055),
-    inset -1px -1px 2px oklch(1 0.004 82 / 0.62);
-  --shadow-drawer: 0 18px 44px oklch(0.23 0.02 70 / 0.18);
-  --shadow-paper: 0 12px 26px oklch(0.33 0.012 70 / 0.11);
-  --shadow-send: 4px 5px 12px oklch(0.36 0.012 70 / 0.06);
+    inset 4px 4px 9px oklch(0.43 0.016 70 / 0.075),
+    inset -4px -4px 9px oklch(0.998 0.004 82 / 0.78);
+  --shadow-pressed:
+    inset 5px 5px 12px oklch(0.42 0.016 70 / 0.12),
+    inset -5px -5px 12px oklch(0.998 0.004 82 / 0.78);
+  --shadow-button:
+    6px 7px 15px oklch(0.42 0.016 70 / 0.08),
+    -5px -5px 12px oklch(0.998 0.004 82 / 0.72);
+  --shadow-drawer: 0 22px 54px oklch(0.23 0.02 70 / 0.2);
+  --shadow-paper:
+    14px 18px 34px oklch(0.33 0.012 70 / 0.14),
+    -8px -8px 18px oklch(0.998 0.004 82 / 0.56);
+  --shadow-send:
+    6px 7px 16px color-mix(in oklch, var(--accent) 18%, transparent),
+    inset 1px 1px 0 color-mix(in oklch, var(--surface-highlight) 48%, transparent);
 
   --accent: oklch(0.68 0.17 38);
   --accent-soft: oklch(0.82 0.11 42);
@@ -71,13 +89,14 @@
   --warning-text: oklch(0.84 0.13 78);
   --error-text: oklch(0.78 0.12 24);
 
-  --radius-panel: 10px;
+  --radius-shell: 28px;
+  --radius-panel: 14px;
   --radius-control: 8px;
   --radius-small: 6px;
-  --rail-left: clamp(320px, 17vw, 348px);
-  --rail-right: clamp(340px, 18.5vw, 384px);
-  --workspace-measure: 960px;
-  --workspace-gutter: clamp(18px, 2vw, 30px);
+  --rail-left: clamp(300px, 20vw, 380px);
+  --rail-right: clamp(300px, 20vw, 380px);
+  --workspace-measure: 1040px;
+  --workspace-gutter: clamp(22px, 2.2vw, 36px);
   --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
 }
 

@@ -8,7 +8,7 @@
 
 .appShell {
   display: grid;
-  grid-template-columns: var(--rail-left) minmax(0, 1fr) var(--rail-right);
+  grid-template-columns: var(--rail-left) minmax(0, 3fr) var(--rail-right);
   width: 100%;
   height: 100vh;
   height: 100dvh;
@@ -19,7 +19,6 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  backdrop-filter: none;
 }
 
 .drawerOverlay {
@@ -45,7 +44,9 @@
   background: var(--sidebar-bg);
   border-right: 1px solid var(--sidebar-border);
   color: var(--text-inverse);
-  box-shadow: inset -1px 0 0 var(--sidebar-edge-highlight);
+  box-shadow:
+    inset -1px 0 0 var(--sidebar-edge-highlight),
+    inset -14px 0 28px oklch(0.12 0.025 276 / 0.18);
   transition: transform 220ms var(--ease-out-soft);
 }
 
@@ -166,7 +167,10 @@
   background: var(--sidebar-card-bg);
   border: 1px solid var(--sidebar-card-border);
   border-radius: var(--radius-control);
-  box-shadow: inset 0 1px 0 var(--sidebar-inner-highlight);
+  box-shadow:
+    5px 6px 12px oklch(0.12 0.026 276 / 0.24),
+    -3px -3px 8px oklch(0.42 0.018 276 / 0.1),
+    inset 0 1px 0 var(--sidebar-inner-highlight);
 }
 
 .printerMeta dt {
@@ -212,18 +216,30 @@
   transition:
     background-color 160ms ease,
     border-color 160ms ease,
-    color 160ms ease;
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 160ms var(--ease-out-soft);
 }
 
 .flowItem:hover {
   background: var(--sidebar-hover-bg);
   border-color: var(--sidebar-hover-border);
+  box-shadow:
+    5px 7px 14px oklch(0.11 0.025 276 / 0.2),
+    -3px -3px 8px oklch(0.48 0.016 276 / 0.08);
 }
 
 .flowItem.isActive {
   background: var(--sidebar-active);
   border-color: color-mix(in oklch, var(--accent) 36%, var(--sidebar-border));
-  box-shadow: inset 0 1px 0 var(--sidebar-active-highlight);
+  box-shadow:
+    inset 4px 4px 9px oklch(0.12 0.026 276 / 0.24),
+    inset -3px -3px 8px oklch(0.52 0.014 276 / 0.1),
+    inset 0 1px 0 var(--sidebar-active-highlight);
+}
+
+.flowItem:active {
+  transform: translateY(1px);
 }
 
 .flowTopline {
@@ -299,7 +315,10 @@
   border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 700;
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 60%, transparent);
+  box-shadow:
+    4px 5px 10px oklch(0.12 0.026 276 / 0.2),
+    -2px -2px 8px oklch(0.52 0.014 276 / 0.08),
+    inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 60%, transparent);
 }
 
 .profileSummary {
@@ -334,9 +353,13 @@
   background: var(--sidebar-bg-strong);
   border: 1px solid var(--sidebar-hover-border);
   border-radius: var(--radius-control);
+  box-shadow:
+    5px 6px 12px oklch(0.12 0.026 276 / 0.22),
+    -3px -3px 8px oklch(0.48 0.016 276 / 0.08);
   transition:
     background-color 180ms var(--ease-out-soft),
     border-color 180ms var(--ease-out-soft),
+    box-shadow 180ms var(--ease-out-soft),
     color 180ms var(--ease-out-soft);
 }
 
@@ -345,6 +368,9 @@
   color: var(--text-inverse);
   background: var(--sidebar-active);
   border-color: color-mix(in oklch, var(--accent) 32%, var(--sidebar-hover-border));
+  box-shadow:
+    inset 4px 4px 9px oklch(0.12 0.026 276 / 0.24),
+    inset -3px -3px 8px oklch(0.52 0.014 276 / 0.1);
 }
 
 .profileSettingsPanel {
@@ -360,7 +386,9 @@
   background: color-mix(in oklch, var(--sidebar-bg) 86%, var(--sidebar-bg-strong));
   border: 1px solid var(--sidebar-hover-border);
   border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-drawer);
+  box-shadow:
+    14px 18px 36px oklch(0.1 0.025 276 / 0.34),
+    -6px -6px 18px oklch(0.52 0.014 276 / 0.08);
 }
 
 .profileSettingsHeader {
@@ -437,6 +465,7 @@
   transition:
     background-color 180ms var(--ease-out-soft),
     border-color 180ms var(--ease-out-soft),
+    box-shadow 180ms var(--ease-out-soft),
     color 180ms var(--ease-out-soft);
 }
 
@@ -457,6 +486,9 @@
   color: var(--text-inverse);
   background: var(--sidebar-active);
   border-color: color-mix(in oklch, var(--accent) 28%, var(--sidebar-hover-border));
+  box-shadow:
+    inset 3px 3px 7px oklch(0.12 0.026 276 / 0.2),
+    inset -2px -2px 6px oklch(0.52 0.014 276 / 0.08);
 }
 
 .languageOption span:first-child,
@@ -484,6 +516,9 @@
   border-radius: var(--radius-small);
   font-size: 10px;
   font-weight: 750;
+  box-shadow:
+    2px 3px 7px oklch(0.12 0.026 276 / 0.18),
+    inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 58%, transparent);
 }
 
 .profileSettingsPanel svg {
@@ -513,6 +548,9 @@
   background:
     radial-gradient(620px 300px at 82% 0%, var(--workspace-glow), transparent 64%),
     var(--main-bg);
+  box-shadow:
+    inset 1px 0 0 color-mix(in oklch, var(--surface-highlight) 58%, transparent),
+    inset -1px 0 0 color-mix(in oklch, var(--border-soft) 64%, transparent);
 }
 
 .mobileTopbar {
@@ -527,7 +565,7 @@
   gap: 16px;
   background: var(--workspace-header-bg);
   border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 78%, transparent);
-  backdrop-filter: blur(12px);
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--surface-highlight) 42%, transparent);
 }
 
 .workspaceTitle {
@@ -568,13 +606,14 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 7px;
-  padding: 3px 0;
+  padding: 6px 9px;
   color: var(--text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in oklch, var(--border-soft) 82%, var(--surface-highlight));
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  box-shadow: var(--shadow-soft);
 }
 
 .workspaceBody {
@@ -594,21 +633,29 @@
   align-content: center;
   gap: 8px;
   color: var(--text-secondary);
-  background: var(--glass-bg);
+  background: var(--surface-raised);
   border: 1px dashed color-mix(in oklch, var(--accent-soft) 58%, var(--border-soft));
-  border-radius: var(--radius-control);
-  box-shadow:
-    var(--shadow-panel),
-    inset 0 1px 0 var(--surface-highlight);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
   transition:
     background-color 180ms var(--ease-out-soft),
     border-color 180ms var(--ease-out-soft),
-    box-shadow 180ms var(--ease-out-soft);
+    box-shadow 180ms var(--ease-out-soft),
+    transform 180ms var(--ease-out-soft);
 }
 
 .uploadZone:hover {
   background: color-mix(in oklch, var(--accent-bg) 30%, var(--glass-bg-strong));
   border-color: color-mix(in oklch, var(--accent-soft) 72%, var(--border-soft));
+  box-shadow:
+    14px 16px 34px oklch(0.42 0.016 70 / 0.1),
+    -10px -10px 24px oklch(0.998 0.004 82 / 0.78);
+  transform: translateY(-1px);
+}
+
+.uploadZone:active {
+  box-shadow: var(--shadow-pressed);
+  transform: translateY(1px);
 }
 
 .uploadZone svg {
@@ -633,13 +680,10 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 16px 16px 18px;
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--glass-border);
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in oklch, var(--surface-highlight) 76%, var(--border-soft));
   border-radius: var(--radius-panel);
-  box-shadow:
-    var(--shadow-panel),
-    inset 0 1px 0 var(--surface-highlight);
-  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-panel);
 }
 
 .fileSummary {
@@ -659,7 +703,10 @@
   background: var(--accent-bg);
   border: 1px solid color-mix(in oklch, var(--accent-soft) 45%, var(--border-soft));
   border-radius: var(--radius-control);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 68%, transparent);
+  box-shadow:
+    5px 6px 12px color-mix(in oklch, var(--accent) 10%, transparent),
+    -4px -4px 10px color-mix(in oklch, var(--surface-highlight) 72%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 68%, transparent);
 }
 
 .fileCopy {
@@ -683,12 +730,12 @@
 .previewStage {
   display: grid;
   min-height: clamp(286px, 37vh, 390px);
-  padding: 6px 0 10px;
+  padding: 18px;
   place-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-control);
-  box-shadow: none;
+  background: var(--surface-sunken);
+  border: 1px solid color-mix(in oklch, var(--border-soft) 70%, var(--surface-highlight));
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-pressed);
 }
 
 .previewCanvas {
@@ -705,7 +752,7 @@
   aspect-ratio: 210 / 297;
   padding: 8%;
   background: var(--paper-bg);
-  border: 1px solid var(--border-strong);
+  border: 1px solid color-mix(in oklch, var(--border-strong) 74%, var(--surface-highlight));
   border-radius: 4px;
   box-shadow: var(--shadow-paper);
 }
@@ -802,9 +849,9 @@
   border: 1px solid color-mix(in oklch, var(--accent-soft) 26%, var(--border-soft));
   border-radius: var(--radius-panel);
   box-shadow:
-    0 1px 0 var(--surface-highlight),
+    7px 8px 18px oklch(0.42 0.016 70 / 0.06),
+    -6px -6px 16px oklch(0.998 0.004 82 / 0.62),
     inset 0 1px 0 var(--surface-highlight);
-  backdrop-filter: blur(12px);
 }
 
 .assistantMessage svg {
@@ -824,20 +871,32 @@
   font-size: 13px;
 }
 
-.assistantMessage-warning svg,
+.assistantMessage-warning {
+  background: color-mix(in oklch, var(--warning) 12%, var(--surface-raised));
+  border-color: color-mix(in oklch, var(--warning) 28%, var(--border-soft));
+}
+
+.assistantMessage-warning svg {
+  color: var(--warning);
+}
+
+.assistantMessage-error {
+  background: color-mix(in oklch, var(--error) 10%, var(--surface-raised));
+  border-color: color-mix(in oklch, var(--error) 26%, var(--border-soft));
+}
+
 .assistantMessage-error svg {
   color: var(--error);
 }
 
 .timeline {
+  width: min(100%, 760px);
+  justify-self: center;
   padding: 12px 14px 2px;
-  background: color-mix(in oklch, var(--panel-bg) 82%, transparent);
-  border: 1px solid var(--glass-border);
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in oklch, var(--surface-highlight) 76%, var(--border-soft));
   border-radius: var(--radius-panel);
-  box-shadow:
-    0 1px 0 var(--surface-highlight),
-    inset 0 1px 0 var(--surface-highlight);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-soft);
 }
 
 .sectionHeader {
@@ -875,10 +934,10 @@
   height: 24px;
   place-items: center;
   color: var(--text-secondary);
-  background: var(--surface-sunken);
+  background: var(--surface-raised);
   border: 1px solid var(--border-soft);
   border-radius: 50%;
-  box-shadow: var(--shadow-control);
+  box-shadow: var(--shadow-button);
 }
 
 .timelineContent {
@@ -935,7 +994,7 @@
   padding: 12px var(--workspace-inline) 16px;
   background: var(--toolbar-bg);
   border-top: 1px solid color-mix(in oklch, var(--border-soft) 78%, transparent);
-  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 52%, transparent);
 }
 
 .iconButton,
@@ -958,11 +1017,9 @@
   width: 36px;
   height: 36px;
   color: var(--text-secondary);
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--border-soft);
-  box-shadow:
-    0 1px 0 var(--surface-highlight),
-    var(--shadow-control);
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in oklch, var(--surface-highlight) 70%, var(--border-soft));
+  box-shadow: var(--shadow-button);
 }
 
 .iconButton:hover {
@@ -971,12 +1028,16 @@
   background: var(--panel-solid);
 }
 
+.iconButton:active {
+  box-shadow: var(--shadow-pressed);
+}
+
 .commandBar input {
   min-width: 0;
   height: 38px;
   padding: 0 12px;
   color: var(--text-primary);
-  background: var(--glass-bg-strong);
+  background: var(--field-bg);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
   font-size: 13px;
@@ -993,13 +1054,17 @@
   color: var(--accent-text);
   background: var(--accent-bg);
   border: 1px solid color-mix(in oklch, var(--accent-soft) 52%, var(--border-soft));
-  box-shadow:
-    0 1px 0 var(--surface-highlight),
-    var(--shadow-send);
+  box-shadow: var(--shadow-send);
 }
 
 .sendButton:hover {
   background: color-mix(in oklch, var(--accent-bg) 78%, var(--accent-soft));
+}
+
+.sendButton:active {
+  box-shadow:
+    inset 4px 4px 9px color-mix(in oklch, var(--accent) 20%, transparent),
+    inset -4px -4px 9px color-mix(in oklch, var(--surface-highlight) 60%, transparent);
 }
 
 .preferencesPanel {
@@ -1008,10 +1073,11 @@
   flex-direction: column;
   overflow: hidden;
   padding: 0;
-  background: var(--glass-bg-strong);
-  border-left: 1px solid var(--glass-border);
-  box-shadow: inset 1px 0 0 var(--surface-highlight);
-  backdrop-filter: blur(16px);
+  background: var(--panel-bg);
+  border-left: 1px solid color-mix(in oklch, var(--surface-highlight) 62%, var(--border-soft));
+  box-shadow:
+    inset 1px 0 0 color-mix(in oklch, var(--surface-highlight) 76%, transparent),
+    -10px 0 24px oklch(0.42 0.016 70 / 0.055);
   transition: transform 220ms var(--ease-out-soft);
 }
 
@@ -1022,6 +1088,8 @@
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
+  background: var(--panel-solid);
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--surface-highlight) 50%, transparent);
 }
 
 .preferencesHeader h2 {
@@ -1042,21 +1110,24 @@
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  gap: 12px;
+  gap: 13px;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 14px 18px;
+  padding: 16px 18px;
 }
 
 .settingsGroup {
   display: grid;
-  gap: 8px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 78%, transparent);
+  gap: 9px;
+  padding: 11px;
+  background: var(--surface-soft);
+  border: 1px solid color-mix(in oklch, var(--surface-highlight) 64%, var(--border-soft));
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-soft);
 }
 
 .settingsGroup-last {
-  border-bottom: 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--surface-highlight) 64%, var(--border-soft));
 }
 
 .settingsGroup h3 {
@@ -1085,6 +1156,23 @@
   border-radius: var(--radius-control);
   font-size: 13px;
   box-shadow: var(--shadow-control);
+  transition:
+    background-color 180ms var(--ease-out-soft),
+    border-color 180ms var(--ease-out-soft),
+    box-shadow 180ms var(--ease-out-soft);
+}
+
+.field input:hover,
+.field select:hover,
+.settingsGroup select:hover {
+  border-color: var(--border-strong);
+}
+
+.field input:focus,
+.field select:focus,
+.settingsGroup select:focus {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pressed);
 }
 
 .segmentedControl {
@@ -1095,7 +1183,7 @@
   background: var(--surface-sunken);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
-  box-shadow: var(--shadow-control);
+  box-shadow: var(--shadow-pressed);
 }
 
 .segmentedControl button {
@@ -1106,6 +1194,11 @@
   border-radius: var(--radius-small);
   font-size: 12px;
   font-weight: 600;
+  transition:
+    background-color 180ms var(--ease-out-soft),
+    border-color 180ms var(--ease-out-soft),
+    box-shadow 180ms var(--ease-out-soft),
+    color 180ms var(--ease-out-soft);
 }
 
 .segmentedControl button:hover {
@@ -1116,7 +1209,14 @@
   color: var(--accent-text);
   background: var(--accent-bg);
   border-color: color-mix(in oklch, var(--accent-soft) 48%, var(--border-soft));
-  box-shadow: 0 1px 0 var(--surface-highlight);
+  box-shadow:
+    4px 5px 10px color-mix(in oklch, var(--accent) 10%, transparent),
+    -3px -3px 8px color-mix(in oklch, var(--surface-highlight) 66%, transparent),
+    inset 0 1px 0 var(--surface-highlight);
+}
+
+.segmentedControl button:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .checkboxField {
@@ -1128,9 +1228,39 @@
 }
 
 .checkboxField input {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
+  display: grid;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: 0 0 auto;
+  place-content: center;
+  appearance: none;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  box-shadow: var(--shadow-control);
+}
+
+.checkboxField input::before {
+  width: 9px;
+  height: 9px;
+  background: var(--text-on-accent);
+  clip-path: polygon(14% 48%, 36% 70%, 84% 18%, 96% 30%, 37% 91%, 2% 58%);
+  content: "";
+  transform: scale(0);
+  transition: transform 140ms var(--ease-out-soft);
+}
+
+.checkboxField input:checked {
+  background: color-mix(in oklch, var(--accent) 86%, var(--text-primary));
+  border-color: color-mix(in oklch, var(--accent) 76%, var(--text-primary));
+  box-shadow:
+    4px 5px 10px color-mix(in oklch, var(--accent) 18%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 36%, transparent);
+}
+
+.checkboxField input:checked::before {
+  transform: scale(1);
 }
 
 .printPlan {
@@ -1140,7 +1270,7 @@
   background: var(--surface-sunken);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
-  box-shadow: var(--shadow-control);
+  box-shadow: var(--shadow-pressed);
 }
 
 .printPlan strong {
@@ -1156,7 +1286,7 @@
   padding: 14px 18px 16px;
   background: var(--toolbar-bg);
   border-top: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
-  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 58%, transparent);
 }
 
 .primaryPrintButton {
@@ -1175,13 +1305,22 @@
 .primaryPrintButton:hover:not(:disabled) {
   background: color-mix(in oklch, var(--accent) 82%, var(--text-primary));
   border-color: color-mix(in oklch, var(--accent) 74%, var(--text-primary));
+  box-shadow:
+    0 10px 22px color-mix(in oklch, var(--accent) 22%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--surface-highlight) 48%, transparent);
+}
+
+.primaryPrintButton:active:not(:disabled) {
+  box-shadow:
+    inset 5px 5px 12px color-mix(in oklch, var(--accent) 28%, var(--text-primary)),
+    inset -4px -4px 10px color-mix(in oklch, var(--surface-highlight) 32%, transparent);
 }
 
 .primaryPrintButton:disabled {
   color: var(--text-muted);
   background: var(--surface-sunken);
   border-color: var(--border-soft);
-  box-shadow: var(--shadow-control);
+  box-shadow: var(--shadow-pressed);
 }
 
 .secondaryActions {
@@ -1195,19 +1334,22 @@
   gap: 7px;
   min-height: 34px;
   color: var(--text-secondary);
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--border-soft);
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in oklch, var(--surface-highlight) 70%, var(--border-soft));
   font-size: 12px;
   font-weight: 600;
-  box-shadow:
-    0 1px 0 var(--surface-highlight),
-    var(--shadow-control);
+  box-shadow: var(--shadow-button);
 }
 
 .secondaryActions button:hover,
 .textIconButton:hover {
   color: var(--text-primary);
   border-color: var(--border-strong);
+}
+
+.secondaryActions button:active,
+.textIconButton:active {
+  box-shadow: var(--shadow-pressed);
 }
 
 .printerReadyNote {
@@ -1227,7 +1369,7 @@
     gap: 10px;
     background: var(--toolbar-bg);
     border-bottom: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
-    backdrop-filter: blur(14px);
+    box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--surface-highlight) 48%, transparent);
   }
 
   .mobileTopbar .textIconButton:first-child {
@@ -1240,7 +1382,7 @@
     bottom: 0;
     right: 0;
     z-index: 20;
-    width: min(var(--rail-right), calc(100vw - 24px));
+    width: min(340px, calc(100vw - 24px));
     border: 1px solid var(--glass-border);
     border-right: 0;
     border-radius: 0;
