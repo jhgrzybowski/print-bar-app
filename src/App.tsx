@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   Clock3,
   Eye,
   FileSearch,
   FileText,
+  Languages,
   Menu,
   MessageSquareText,
   Paperclip,
@@ -34,123 +36,423 @@ import type {
   PrintSettings,
 } from "./types/print";
 import {
+  createTranslator,
+  getLanguage,
+  isLanguageCode,
+  languages,
+} from "./i18n";
+import type { LanguageCode, TranslationKey, Translator } from "./i18n";
+import type { TranslationValues } from "./i18n";
+import {
   formatFileSize,
-  formatMimeType,
   formatShortDate,
   formatTime,
 } from "./utils/format";
 
 type SettingsKey = keyof PrintSettings;
 
-const statusLabels: Record<PrinterStatus, string> = {
-  ready: "Online · Ready",
-  warning: "Online · Needs attention",
-  error: "Error",
-  offline: "Offline",
+const languageStorageKey = "print-bar-language";
+
+type CountTranslationKeySet = Partial<
+  Record<Intl.LDMLPluralRule, TranslationKey>
+> & {
+  other: TranslationKey;
 };
 
-const flowStatusLabels: Record<PrintChat["status"], string> = {
-  draft: "Draft",
-  ready: "Ready",
-  queued: "Queued",
-  printed: "Printed",
-  cancelled: "Cancelled",
-  error: "Error",
+const copyCountKeys: Record<LanguageCode, CountTranslationKeySet> = {
+  en: {
+    one: "count.copy.one",
+    other: "count.copy.other",
+  },
+  pl: {
+    few: "count.copy.few",
+    many: "count.copy.many",
+    one: "count.copy.one",
+    other: "count.copy.other",
+  },
 };
 
-const actionLabels: Record<PrintActionType, string> = {
-  file_uploaded: "Upload",
-  preview_generated: "Preview",
-  settings_changed: "Settings",
-  print_submitted: "Queue",
-  print_completed: "Printed",
-  print_cancelled: "Cancelled",
-  warning: "Warning",
-  error: "Error",
-  assistant_message: "Assistant",
+const pageCountKeys: Record<LanguageCode, CountTranslationKeySet> = {
+  en: {
+    one: "count.page.one",
+    other: "count.page.other",
+  },
+  pl: {
+    few: "count.page.few",
+    many: "count.page.many",
+    one: "count.page.one",
+    other: "count.page.other",
+  },
+};
+
+const actionCountKeys: Record<LanguageCode, CountTranslationKeySet> = {
+  en: {
+    one: "count.action.one",
+    other: "count.action.other",
+  },
+  pl: {
+    few: "count.action.few",
+    many: "count.action.many",
+    one: "count.action.one",
+    other: "count.action.other",
+  },
+};
+
+const statusLabelKeys: Record<PrinterStatus, TranslationKey> = {
+  ready: "status.ready",
+  warning: "status.warning",
+  error: "status.error",
+  offline: "status.offline",
+};
+
+const flowStatusLabelKeys: Record<PrintChat["status"], TranslationKey> = {
+  draft: "flowStatus.draft",
+  ready: "flowStatus.ready",
+  queued: "flowStatus.queued",
+  printed: "flowStatus.printed",
+  cancelled: "flowStatus.cancelled",
+  error: "flowStatus.error",
+};
+
+const actionLabelKeys: Record<PrintActionType, TranslationKey> = {
+  file_uploaded: "action.upload",
+  preview_generated: "action.preview",
+  settings_changed: "action.settings",
+  print_submitted: "action.queue",
+  print_completed: "action.printed",
+  print_cancelled: "action.cancelled",
+  warning: "action.warning",
+  error: "action.error",
+  assistant_message: "action.assistant",
+};
+
+const actionCopyKeys: Partial<
+  Record<PrintAction["id"], { title: TranslationKey; description?: TranslationKey }>
+> = {
+  "act-contract-settings": {
+    title: "timeline.contract.settings.title",
+    description: "timeline.contract.settings.description",
+  },
+  "act-contract-submitted": {
+    title: "timeline.contract.submitted.title",
+    description: "timeline.contract.submitted.description",
+  },
+  "act-contract-uploaded": {
+    title: "timeline.contract.uploaded.title",
+    description: "timeline.contract.uploaded.description",
+  },
+  "act-invoice-complete": {
+    title: "timeline.invoice.complete.title",
+    description: "timeline.invoice.complete.description",
+  },
+  "act-invoice-guidance": {
+    title: "timeline.invoice.guidance.title",
+    description: "timeline.invoice.guidance.description",
+  },
+  "act-invoice-preview": {
+    title: "timeline.invoice.preview.title",
+    description: "timeline.invoice.preview.description",
+  },
+  "act-invoice-submitted": {
+    title: "timeline.invoice.submitted.title",
+    description: "timeline.invoice.submitted.description",
+  },
+  "act-invoice-uploaded": {
+    title: "timeline.invoice.uploaded.title",
+    description: "timeline.invoice.uploaded.description",
+  },
+  "act-label-complete": {
+    title: "timeline.label.complete.title",
+    description: "timeline.label.complete.description",
+  },
+  "act-label-settings": {
+    title: "timeline.label.settings.title",
+    description: "timeline.label.settings.description",
+  },
+  "act-label-uploaded": {
+    title: "timeline.label.uploaded.title",
+    description: "timeline.label.uploaded.description",
+  },
+  "act-notes-guidance": {
+    title: "timeline.notes.guidance.title",
+    description: "timeline.notes.guidance.description",
+  },
+  "act-recipe-cancelled": {
+    title: "timeline.recipe.cancelled.title",
+    description: "timeline.recipe.cancelled.description",
+  },
+  "act-recipe-uploaded": {
+    title: "timeline.recipe.uploaded.title",
+    description: "timeline.recipe.uploaded.description",
+  },
+  "act-recipe-warning": {
+    title: "timeline.recipe.warning.title",
+    description: "timeline.recipe.warning.description",
+  },
 };
 
 const makeAction = (
   type: PrintActionType,
   title: string,
   description: string,
+  metadata?: PrintAction["metadata"],
 ): PrintAction => ({
   id: crypto.randomUUID(),
   type,
   title,
   description,
   createdAt: new Date().toISOString(),
+  metadata,
 });
 
-const inferCommandSettings = (command: string, settings: PrintSettings) => {
+const makeTranslatedAction = (
+  type: PrintActionType,
+  titleKey: TranslationKey,
+  descriptionKey: TranslationKey,
+  t: Translator,
+  values?: TranslationValues,
+) =>
+  makeAction(type, t(titleKey, values), t(descriptionKey, values), {
+    i18n: {
+      descriptionKey,
+      titleKey,
+      values,
+    },
+  });
+
+const getInitialLanguage = (): LanguageCode => {
+  if (typeof window === "undefined") {
+    return "en";
+  }
+
+  try {
+    const storedLanguage = window.localStorage.getItem(languageStorageKey);
+
+    if (storedLanguage && isLanguageCode(storedLanguage)) {
+      return storedLanguage;
+    }
+  } catch {
+    // Storage can be unavailable in private or embedded browser contexts.
+  }
+
+  const browserLanguage = window.navigator.language.split("-")[0];
+
+  return isLanguageCode(browserLanguage) ? browserLanguage : "en";
+};
+
+const getStatusLabel = (status: PrinterStatus, t: Translator) =>
+  t(statusLabelKeys[status]);
+
+const getFlowStatusLabel = (status: PrintChat["status"], t: Translator) =>
+  t(flowStatusLabelKeys[status]);
+
+const getActionLabel = (type: PrintActionType, t: Translator) =>
+  t(actionLabelKeys[type]);
+
+const getActionCopy = (action: PrintAction, t: Translator) => {
+  const i18n = action.metadata?.i18n as
+    | {
+        descriptionKey?: TranslationKey;
+        titleKey?: TranslationKey;
+        values?: TranslationValues;
+      }
+    | undefined;
+
+  if (i18n?.titleKey) {
+    return {
+      description: i18n.descriptionKey
+        ? t(i18n.descriptionKey, i18n.values)
+        : action.description,
+      title: t(i18n.titleKey, i18n.values),
+    };
+  }
+
+  const keys = actionCopyKeys[action.id];
+
+  return {
+    description: keys?.description ? t(keys.description) : action.description,
+    title: keys ? t(keys.title) : action.title,
+  };
+};
+
+const getLocale = (language: LanguageCode) => getLanguage(language).locale;
+
+const formatCount = (
+  count: number,
+  language: LanguageCode,
+  t: Translator,
+  keys: Record<LanguageCode, CountTranslationKeySet>,
+) => {
+  const pluralRule = new Intl.PluralRules(getLocale(language)).select(count);
+  const key = keys[language][pluralRule] ?? keys[language].other;
+
+  return t(key, { count });
+};
+
+const formatCopyCount = (
+  count: number,
+  language: LanguageCode,
+  t: Translator,
+) => formatCount(count, language, t, copyCountKeys);
+
+const formatPageCount = (
+  count: number,
+  language: LanguageCode,
+  t: Translator,
+) => formatCount(count, language, t, pageCountKeys);
+
+const formatActionCount = (
+  count: number,
+  language: LanguageCode,
+  t: Translator,
+) => formatCount(count, language, t, actionCountKeys);
+
+const formatPageCountValue = (
+  count: number | undefined,
+  language: LanguageCode,
+  t: Translator,
+) => (count ? formatPageCount(count, language, t) : t("unknownPages"));
+
+const formatMimeType = (mimeType: string, t: Translator) => {
+  if (mimeType === "application/pdf") {
+    return t("mime.pdf");
+  }
+
+  if (mimeType === "text/plain") {
+    return t("mime.text");
+  }
+
+  if (mimeType.startsWith("image/")) {
+    return t("mime.image", {
+      type: mimeType.split("/")[1]?.toUpperCase() ?? "Image",
+    });
+  }
+
+  return mimeType;
+};
+
+const formatPageRange = (pageRange: PrintSettings["pageRange"], t: Translator) =>
+  pageRange === "all" ? t("allPages") : pageRange;
+
+const formatPageRangeInput = (
+  pageRange: PrintSettings["pageRange"],
+  t: Translator,
+) => (pageRange === "all" ? t("pageRangeAllInput") : pageRange);
+
+const parsePageRangeInput = (value: string): PrintSettings["pageRange"] => {
+  const normalized = value.trim().toLowerCase();
+
+  if (
+    !normalized ||
+    normalized === "all" ||
+    normalized === "wszystkie" ||
+    normalized === "calosc" ||
+    normalized === "całość"
+  ) {
+    return "all";
+  }
+
+  return value;
+};
+
+const inferCommandSettings = (
+  command: string,
+  settings: PrintSettings,
+  language: LanguageCode,
+  t: Translator,
+) => {
   const nextSettings = { ...settings };
   const changes: string[] = [];
   const normalized = command.toLowerCase();
-  const copiesMatch = normalized.match(/(\d+)\s*(copy|copies)/);
+  const copiesMatch = normalized.match(
+    /(\d+)\s*(copy|copies|kopia|kopie|kopii|egzemplarz|egzemplarze|egzemplarzy)/,
+  );
 
   if (copiesMatch?.[1]) {
     nextSettings.copies = Math.max(1, Number(copiesMatch[1]));
-    changes.push(`${nextSettings.copies} copies`);
+    changes.push(formatCopyCount(nextSettings.copies, language, t));
   }
 
-  if (normalized.includes("grayscale") || normalized.includes("black and white")) {
+  if (
+    normalized.includes("grayscale") ||
+    normalized.includes("black and white") ||
+    normalized.includes("skala szarości") ||
+    normalized.includes("szarości") ||
+    normalized.includes("czarno-bia")
+  ) {
     nextSettings.colorMode = "grayscale";
-    changes.push("grayscale");
+    changes.push(t("colorMode.grayscale"));
   }
 
-  if (normalized.includes("color")) {
+  if (normalized.includes("color") || normalized.includes("kolor")) {
     nextSettings.colorMode = "color";
-    changes.push("color");
+    changes.push(t("colorMode.color"));
   }
 
-  if (normalized.includes("landscape")) {
+  if (normalized.includes("landscape") || normalized.includes("poziom")) {
     nextSettings.orientation = "landscape";
-    changes.push("landscape");
+    changes.push(t("option.landscape"));
   }
 
-  if (normalized.includes("portrait")) {
+  if (normalized.includes("portrait") || normalized.includes("pionow")) {
     nextSettings.orientation = "portrait";
-    changes.push("portrait");
+    changes.push(t("option.portrait"));
   }
 
-  if (normalized.includes("duplex") || normalized.includes("double sided")) {
+  if (
+    normalized.includes("duplex") ||
+    normalized.includes("double sided") ||
+    normalized.includes("dwustron")
+  ) {
     nextSettings.duplex = "long-edge";
-    changes.push("duplex");
+    changes.push(t("duplex.longEdge"));
   }
 
   return { nextSettings, changes };
 };
 
-const getFlowMeta = (chat: PrintChat) => {
+const getFlowMeta = (
+  chat: PrintChat,
+  language: LanguageCode,
+  t: Translator,
+) => {
   if (!chat.file) {
-    return "No file selected";
+    return t("meta.noFile");
   }
 
-  const pageText = chat.file.pageCount === 1 ? "1 page" : `${chat.file.pageCount} pages`;
-  const mode = chat.settings.colorMode === "grayscale" ? "grayscale" : "color";
+  const pageText = formatPageCountValue(chat.file.pageCount, language, t);
+  const mode = t(
+    chat.settings.colorMode === "grayscale"
+      ? "colorMode.grayscale"
+      : "colorMode.color",
+  );
 
   if (chat.status === "cancelled") {
-    return "Cancelled / wrong size";
+    return t("meta.cancelledWrongSize");
   }
 
   if (chat.status === "queued") {
-    return "Waiting in queue";
+    return t("meta.queued");
   }
 
   if (chat.status === "printed") {
-    return `Printed / ${pageText} / ${mode}`;
+    return t("meta.printed", { mode, pages: pageText });
   }
 
   return `${pageText} / ${mode}`;
 };
 
-const getDisabledReason = (chat: PrintChat, status: PrinterStatus) => {
+const getDisabledReason = (
+  chat: PrintChat,
+  status: PrinterStatus,
+  t: Translator,
+) => {
   if (!chat.file) {
-    return "Select a file to print";
+    return t("disabled.noFile");
   }
 
   if (status !== "ready") {
-    return "Printer is not ready";
+    return t("disabled.printerNotReady");
   }
 
   return "";
@@ -167,12 +469,16 @@ function App() {
   const [printChats, setPrintChats] = useState<PrintChat[]>(mockPrintChats);
   const [selectedChatId, setSelectedChatId] = useState(mockPrintChats[0].id);
   const [selectedProfileId, setSelectedProfileId] = useState(profiles[0].id);
+  const [language, setLanguage] = useState<LanguageCode>(getInitialLanguage);
   const [command, setCommand] = useState("");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
 
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0];
+
+  const t = useMemo(() => createTranslator(language), [language]);
 
   const selectedChat = useMemo(
     () =>
@@ -187,7 +493,19 @@ function App() {
   } as CSSProperties;
 
   const canPrint = Boolean(selectedChat.file && printerStatus === "ready");
-  const disabledReason = getDisabledReason(selectedChat, printerStatus);
+  const disabledReason = getDisabledReason(selectedChat, printerStatus, t);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = language;
+    }
+
+    try {
+      window.localStorage.setItem(languageStorageKey, language);
+    } catch {
+      // Language switching still works when persistence is blocked.
+    }
+  }, [language]);
 
   const updateSelectedChat = (updater: (chat: PrintChat) => PrintChat) => {
     setPrintChats((currentChats) =>
@@ -211,14 +529,18 @@ function App() {
     }));
   };
 
-  const addActionToSelectedChat = (
+  const addTranslatedActionToSelectedChat = (
     type: PrintActionType,
-    title: string,
-    description: string,
+    titleKey: TranslationKey,
+    descriptionKey: TranslationKey,
+    values?: TranslationValues,
   ) => {
     updateSelectedChat((chat) => ({
       ...chat,
-      actions: [...chat.actions, makeAction(type, title, description)],
+      actions: [
+        ...chat.actions,
+        makeTranslatedAction(type, titleKey, descriptionKey, t, values),
+      ],
       updatedAt: new Date().toISOString(),
     }));
   };
@@ -239,10 +561,12 @@ function App() {
       },
       actions: [
         ...chat.actions,
-        makeAction(
+        makeTranslatedAction(
           "settings_changed",
-          `${profile.name} profile applied`,
-          "Default settings updated for this print flow.",
+          "profileApplied.title",
+          "profileApplied.description",
+          t,
+          { profileName: profile.name },
         ),
       ],
       updatedAt: new Date().toISOString(),
@@ -261,20 +585,23 @@ function App() {
       },
       actions: [
         ...chat.actions,
-        makeAction(
+        makeTranslatedAction(
           "file_uploaded",
-          "File uploaded",
-          "Text document detected, 1 page.",
+          "chat.upload.file.title",
+          "chat.upload.file.description",
+          t,
         ),
-        makeAction(
+        makeTranslatedAction(
           "preview_generated",
-          "Preview generated",
-          "Plain text layout checked against A4.",
+          "chat.upload.preview.title",
+          "chat.upload.preview.description",
+          t,
         ),
-        makeAction(
+        makeTranslatedAction(
           "assistant_message",
-          "Ready to print",
-          "Draft quality and grayscale are a good match for this file.",
+          "chat.upload.assistant.title",
+          "chat.upload.assistant.description",
+          t,
         ),
       ],
       updatedAt: new Date().toISOString(),
@@ -287,10 +614,10 @@ function App() {
       return;
     }
 
-    addActionToSelectedChat(
+    addTranslatedActionToSelectedChat(
       "assistant_message",
-      "File already selected",
-      "This flow has a file attached. Start another flow to mock a different upload.",
+      "chat.fileAlreadySelected.title",
+      "chat.fileAlreadySelected.description",
     );
   };
 
@@ -306,6 +633,8 @@ function App() {
       const { nextSettings, changes } = inferCommandSettings(
         trimmedCommand,
         chat.settings,
+        language,
+        t,
       );
       const hasSettingChanges = changes.length > 0;
 
@@ -314,12 +643,18 @@ function App() {
         settings: nextSettings,
         actions: [
           ...chat.actions,
-          makeAction(
+          makeTranslatedAction(
             hasSettingChanges ? "settings_changed" : "assistant_message",
-            hasSettingChanges ? "Instruction applied" : "Instruction noted",
             hasSettingChanges
-              ? `${changes.join(", ")} applied. Review the right panel before printing.`
-              : `I noted "${trimmedCommand}". The print plan is unchanged.`,
+              ? "chat.instructionApplied.title"
+              : "chat.instructionNoted.title",
+            hasSettingChanges
+              ? "chat.instructionApplied.description"
+              : "chat.instructionNoted.description",
+            t,
+            hasSettingChanges
+              ? { changes: changes.join(", ") }
+              : { command: trimmedCommand },
           ),
         ],
         updatedAt: new Date().toISOString(),
@@ -330,20 +665,20 @@ function App() {
   };
 
   const handlePreview = () => {
-    addActionToSelectedChat(
+    addTranslatedActionToSelectedChat(
       "preview_generated",
-      "Preview refreshed",
+      "chat.previewRefreshed.title",
       selectedChat.file
-        ? "Current settings were checked against the selected file."
-        : "Upload a file before generating a preview.",
+        ? "chat.previewRefreshed.withFile"
+        : "chat.previewRefreshed.noFile",
     );
   };
 
   const handleSavePreset = () => {
-    addActionToSelectedChat(
+    addTranslatedActionToSelectedChat(
       "assistant_message",
-      "Preset noted",
-      "Preset saving is mocked in this milestone.",
+      "chat.presetNoted.title",
+      "chat.presetNoted.description",
     );
   };
 
@@ -357,17 +692,21 @@ function App() {
       status: "queued",
       actions: [
         ...chat.actions,
-        makeAction(
+        makeTranslatedAction(
           "print_submitted",
-          "Print submitted",
-          `${chat.file?.name} queued with ${chat.settings.copies} copy${
-            chat.settings.copies === 1 ? "" : "ies"
-          }.`,
+          "chat.printSubmitted.title",
+          "chat.printSubmitted.description",
+          t,
+          {
+            copies: formatCopyCount(chat.settings.copies, language, t),
+            fileName: chat.file?.name ?? "",
+          },
         ),
-        makeAction(
+        makeTranslatedAction(
           "assistant_message",
-          "Queued",
-          "Keep this flow open to review the submitted settings.",
+          "chat.printQueued.title",
+          "chat.printQueued.description",
+          t,
         ),
       ],
       updatedAt: new Date().toISOString(),
@@ -390,17 +729,25 @@ function App() {
           status={printerStatus}
           selectedProfile={selectedProfile}
           profiles={profiles}
+          language={language}
+          t={t}
           isOpen={leftOpen}
+          isSettingsOpen={profileSettingsOpen}
           onClose={() => setLeftOpen(false)}
           onSelectChat={(chatId) => {
             setSelectedChatId(chatId);
             setLeftOpen(false);
           }}
           onSelectProfile={handleSelectProfile}
+          onSelectLanguage={setLanguage}
+          onToggleSettings={() => setProfileSettingsOpen((current) => !current)}
+          onCloseSettings={() => setProfileSettingsOpen(false)}
         />
         <MainWorkspace
           chat={selectedChat}
           command={command}
+          language={language}
+          t={t}
           onCommandChange={setCommand}
           onCommandSubmit={handleCommandSubmit}
           onMockUpload={handleMockUpload}
@@ -413,6 +760,8 @@ function App() {
           status={printerStatus}
           profiles={profiles}
           selectedProfileId={selectedProfile.id}
+          language={language}
+          t={t}
           canPrint={canPrint}
           disabledReason={disabledReason}
           isOpen={rightOpen}
@@ -434,10 +783,16 @@ type PrinterSidebarProps = {
   status: PrinterStatus;
   selectedProfile: PrinterProfile;
   profiles: PrinterProfile[];
+  language: LanguageCode;
+  t: Translator;
   isOpen: boolean;
+  isSettingsOpen: boolean;
   onClose: () => void;
   onSelectChat: (chatId: string) => void;
+  onSelectLanguage: (language: LanguageCode) => void;
   onSelectProfile: (profileId: string) => void;
+  onToggleSettings: () => void;
+  onCloseSettings: () => void;
 };
 
 function PrinterSidebar({
@@ -446,17 +801,24 @@ function PrinterSidebar({
   status,
   selectedProfile,
   profiles,
+  language,
+  t,
   isOpen,
+  isSettingsOpen,
   onClose,
   onSelectChat,
+  onSelectLanguage,
   onSelectProfile,
+  onToggleSettings,
+  onCloseSettings,
 }: PrinterSidebarProps) {
   const queuedCount = chats.filter((chat) => chat.status === "queued").length;
+  const selectedLanguage = getLanguage(language);
 
   return (
     <aside className={`printerSidebar ${isOpen ? "isOpen" : ""}`}>
       <div className="mobilePanelHeader">
-        <button className="iconButton" type="button" onClick={onClose} aria-label="Close print flows">
+        <button className="iconButton" type="button" onClick={onClose} aria-label={t("closePrintFlows")}>
           <X size={17} />
         </button>
       </div>
@@ -468,32 +830,36 @@ function PrinterSidebar({
           <h2>Canon MG5350</h2>
           <div className="statusLine">
             <span className={`statusDot statusDot-${status}`} aria-hidden="true" />
-            <span>{statusLabels[status]}</span>
+            <span>{getStatusLabel(status, t)}</span>
           </div>
         </div>
       </div>
 
-      <dl className="printerMeta" aria-label="Printer metadata">
+      <dl className="printerMeta" aria-label={t("printerMetadata")}>
         <div>
-          <dt>Queue</dt>
-          <dd>{queuedCount === 0 ? "Clear" : `${queuedCount} waiting`}</dd>
+          <dt>{t("queue")}</dt>
+          <dd>
+            {queuedCount === 0
+              ? t("queueClear")
+              : t("queueWaiting", { count: queuedCount })}
+          </dd>
         </div>
         <div>
-          <dt>Paper</dt>
-          <dd>A4 loaded</dd>
+          <dt>{t("paper")}</dt>
+          <dd>{t("paperLoaded", { paperSize: "A4" })}</dd>
         </div>
         <div>
-          <dt>Ink</dt>
-          <dd>Good</dd>
+          <dt>{t("ink")}</dt>
+          <dd>{t("inkGood")}</dd>
         </div>
         <div>
-          <dt>Last seen</dt>
-          <dd>20 sec ago</dd>
+          <dt>{t("lastSeen")}</dt>
+          <dd>{t("lastSeenValue")}</dd>
         </div>
       </dl>
 
-      <nav className="flowList" aria-label="Latest print flows">
-        <h2>Latest prints</h2>
+      <nav className="flowList" aria-label={t("latestPrints")}>
+        <h2>{t("latestPrints")}</h2>
         {chats.map((chat) => (
           <button
             className={`flowItem ${chat.id === selectedChatId ? "isActive" : ""}`}
@@ -505,31 +871,97 @@ function PrinterSidebar({
             <span className="flowTopline">
               <span className="flowName">{chat.title}</span>
               <span className={`flowState flowState-${chat.status}`}>
-                {flowStatusLabels[chat.status]}
+                {getFlowStatusLabel(chat.status, t)}
               </span>
             </span>
-            <span className="flowMeta">{getFlowMeta(chat)}</span>
+            <span className="flowMeta">{getFlowMeta(chat, language, t)}</span>
           </button>
         ))}
       </nav>
 
       <div className="profileArea">
-        <label htmlFor="profile-select">Profile</label>
+        {isSettingsOpen ? (
+          <div className="profileSettingsPanel" role="dialog" aria-label={t("appSettings")}>
+            <div className="profileSettingsHeader">
+              <div>
+                <h2>{t("appSettings")}</h2>
+                <p>{t("languageHelp")}</p>
+              </div>
+              <button
+                className="iconButton"
+                type="button"
+                onClick={onCloseSettings}
+                aria-label={t("closeSettings")}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <section className="profileSettingsSection" aria-labelledby="language-settings-title">
+              <div className="settingsSectionTitle">
+                <Languages size={15} aria-hidden="true" />
+                <h3 id="language-settings-title">{t("language")}</h3>
+              </div>
+              <div className="languageOptions" role="list" aria-label={t("selectLanguage")}>
+                {languages.map((option) => (
+                  <button
+                    className={`languageOption ${option.code === language ? "isSelected" : ""}`}
+                    type="button"
+                    key={option.code}
+                    onClick={() => onSelectLanguage(option.code)}
+                    aria-pressed={option.code === language}
+                  >
+                    <span>{option.nativeLabel}</span>
+                    <span>{option.shortLabel}</span>
+                    {option.code === language ? <Check size={15} aria-hidden="true" /> : null}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="profileSettingsSection" aria-labelledby="profile-settings-title">
+              <div className="settingsSectionTitle">
+                <Printer size={15} aria-hidden="true" />
+                <h3 id="profile-settings-title">{t("profileTheme")}</h3>
+              </div>
+              <div className="profileOptions" role="list" aria-label={t("selectProfile")}>
+                {profiles.map((profile) => (
+                  <button
+                    className={`profileOption ${profile.id === selectedProfile.id ? "isSelected" : ""}`}
+                    type="button"
+                    key={profile.id}
+                    onClick={() => onSelectProfile(profile.id)}
+                    aria-pressed={profile.id === selectedProfile.id}
+                  >
+                    <span className="profileSwatch" aria-hidden="true">
+                      {profile.avatarLabel}
+                    </span>
+                    <span>{profile.name}</span>
+                    {profile.id === selectedProfile.id ? <Check size={15} aria-hidden="true" /> : null}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
         <div className="profileControl">
           <div className="profileAvatar" aria-hidden="true">
             {selectedProfile.avatarLabel}
           </div>
-          <select
-            id="profile-select"
-            value={selectedProfile.id}
-            onChange={(event) => onSelectProfile(event.target.value)}
+          <div className="profileSummary">
+            <span>{selectedProfile.name}</span>
+            <span>{t("currentLanguage")}: {selectedLanguage.nativeLabel}</span>
+          </div>
+          <button
+            className="profileSettingsButton"
+            type="button"
+            onClick={onToggleSettings}
+            aria-expanded={isSettingsOpen}
+            aria-label={t("appSettings")}
           >
-            {profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
+            <Settings2 size={17} />
+          </button>
         </div>
       </div>
     </aside>
@@ -539,6 +971,8 @@ function PrinterSidebar({
 type MainWorkspaceProps = {
   chat: PrintChat;
   command: string;
+  language: LanguageCode;
+  t: Translator;
   onCommandChange: (command: string) => void;
   onCommandSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onMockUpload: () => void;
@@ -550,6 +984,8 @@ type MainWorkspaceProps = {
 function MainWorkspace({
   chat,
   command,
+  language,
+  t,
   onCommandChange,
   onCommandSubmit,
   onMockUpload,
@@ -558,17 +994,20 @@ function MainWorkspace({
   onOpenSettings,
 }: MainWorkspaceProps) {
   const latestGuidance = getLatestGuidance(chat);
+  const latestGuidanceCopy = latestGuidance
+    ? getActionCopy(latestGuidance, t)
+    : undefined;
 
   return (
     <main className="mainWorkspace">
       <div className="mobileTopbar">
         <button type="button" className="textIconButton" onClick={onOpenFlows}>
           <Menu size={16} />
-          Flows
+          {t("flows")}
         </button>
         <button type="button" className="textIconButton" onClick={onOpenSettings}>
           <Settings2 size={16} />
-          Settings
+          {t("mobile.settings")}
         </button>
       </div>
 
@@ -577,24 +1016,33 @@ function MainWorkspace({
           <h1>{chat.title}</h1>
           <p>
             {chat.file
-              ? `${formatMimeType(chat.file.mimeType)} / ${chat.settings.paperSize} / ${chat.settings.colorMode}`
-              : "No file selected yet"}
+              ? `${formatMimeType(chat.file.mimeType, t)} / ${
+                  chat.settings.paperSize
+                } / ${t(
+                  chat.settings.colorMode === "grayscale"
+                    ? "colorMode.grayscale"
+                    : "colorMode.color",
+                )}`
+              : t("noFileSelectedYet")}
           </p>
         </div>
-        <div className="workspaceStatus" aria-label={`Flow status: ${flowStatusLabels[chat.status]}`}>
+        <div
+          className="workspaceStatus"
+          aria-label={`${t("flow")}: ${getFlowStatusLabel(chat.status, t)}`}
+        >
           <span className={`statusDot flowStatusDot-${chat.status}`} aria-hidden="true" />
-          {flowStatusLabels[chat.status]}
+          {getFlowStatusLabel(chat.status, t)}
         </div>
       </header>
 
-      <section className="workspaceBody" aria-label="Selected file workspace">
+      <section className="workspaceBody" aria-label={t("selectedFileWorkspace")}>
         {chat.file ? (
-          <FilePreview chat={chat} />
+          <FilePreview chat={chat} language={language} t={t} />
         ) : (
           <button className="uploadZone" type="button" onClick={onMockUpload}>
             <Upload size={22} />
-            <span className="uploadTitle">Drop a file here</span>
-            <span className="uploadMeta">PDF, image or text document</span>
+            <span className="uploadTitle">{t("uploadTitle")}</span>
+            <span className="uploadMeta">{t("uploadMeta")}</span>
           </button>
         )}
 
@@ -602,17 +1050,20 @@ function MainWorkspace({
           <div className={`assistantMessage assistantMessage-${latestGuidance.type}`}>
             <MessageSquareText size={17} aria-hidden="true" />
             <div>
-              <h2>{latestGuidance.title}</h2>
-              {latestGuidance.description ? <p>{latestGuidance.description}</p> : null}
+              <h2>{latestGuidanceCopy?.title}</h2>
+              {latestGuidanceCopy?.description ? (
+                <p>{latestGuidanceCopy.description}</p>
+              ) : null}
             </div>
           </div>
         ) : null}
 
-        <Timeline actions={chat.actions} />
+        <Timeline actions={chat.actions} language={language} t={t} />
       </section>
 
       <CommandBar
         command={command}
+        t={t}
         onCommandChange={onCommandChange}
         onCommandSubmit={onCommandSubmit}
         onAttach={onAttach}
@@ -621,7 +1072,15 @@ function MainWorkspace({
   );
 }
 
-function FilePreview({ chat }: { chat: PrintChat }) {
+function FilePreview({
+  chat,
+  language,
+  t,
+}: {
+  chat: PrintChat;
+  language: LanguageCode;
+  t: Translator;
+}) {
   const file = chat.file;
 
   if (!file) {
@@ -630,13 +1089,21 @@ function FilePreview({ chat }: { chat: PrintChat }) {
 
   const pageRange =
     chat.settings.pageRange === "all"
-      ? "all pages"
-      : `pages ${chat.settings.pageRange}`;
-  const previewLabel =
-    `${chat.settings.paperSize} ${chat.settings.orientation} preview, ${pageRange}`;
+      ? t("allPages")
+      : chat.settings.pageRange;
+  const orientationLabel = t(
+    chat.settings.orientation === "portrait"
+      ? "option.portrait"
+      : "option.landscape",
+  );
+  const previewLabel = t("previewLabel", {
+    orientation: orientationLabel,
+    pageRange,
+    paperSize: chat.settings.paperSize,
+  });
 
   return (
-    <section className="filePreview" aria-label="Selected file preview">
+    <section className="filePreview" aria-label={t("selectedFilePreview")}>
       <div className="fileSummary">
         <div className="fileIcon" aria-hidden="true">
           <FileText size={20} />
@@ -644,8 +1111,8 @@ function FilePreview({ chat }: { chat: PrintChat }) {
         <div className="fileCopy">
           <h2 title={file.name}>{file.name}</h2>
           <p>
-            {formatMimeType(file.mimeType)} / {formatFileSize(file.sizeBytes)} /{" "}
-            {file.pageCount ?? "Unknown"} {file.pageCount === 1 ? "page" : "pages"}
+            {formatMimeType(file.mimeType, t)} / {formatFileSize(file.sizeBytes)} /{" "}
+            {formatPageCountValue(file.pageCount, language, t)}
           </p>
         </div>
       </div>
@@ -669,8 +1136,8 @@ function FilePreview({ chat }: { chat: PrintChat }) {
             </div>
           </div>
           <div className="previewScaleNote">
-            {chat.settings.paperSize} / {chat.settings.orientation} /{" "}
-            {chat.settings.copies} copy{chat.settings.copies === 1 ? "" : "ies"} /{" "}
+            {chat.settings.paperSize} / {orientationLabel} /{" "}
+            {formatCopyCount(chat.settings.copies, language, t)} /{" "}
             {pageRange}
           </div>
         </div>
@@ -679,29 +1146,43 @@ function FilePreview({ chat }: { chat: PrintChat }) {
   );
 }
 
-function Timeline({ actions }: { actions: PrintAction[] }) {
+function Timeline({
+  actions,
+  language,
+  t,
+}: {
+  actions: PrintAction[];
+  language: LanguageCode;
+  t: Translator;
+}) {
   return (
-    <section className="timeline" aria-label="Print flow timeline">
+    <section className="timeline" aria-label={t("printFlowTimeline")}>
       <div className="sectionHeader">
-        <h2>Flow</h2>
-        <p>{actions.length} actions</p>
+        <h2>{t("flow")}</h2>
+        <p>{formatActionCount(actions.length, language, t)}</p>
       </div>
       <ol>
-        {actions.map((action) => (
-          <li key={action.id} className={`timelineItem timelineItem-${action.type}`}>
-            <div className="timelineIcon" aria-hidden="true">
-              <ActionIcon type={action.type} />
-            </div>
-            <div className="timelineContent">
-              <div className="timelineTopline">
-                <h3>{action.title}</h3>
-                <time dateTime={action.createdAt}>{formatTime(action.createdAt)}</time>
+        {actions.map((action) => {
+          const actionCopy = getActionCopy(action, t);
+
+          return (
+            <li key={action.id} className={`timelineItem timelineItem-${action.type}`}>
+              <div className="timelineIcon" aria-hidden="true">
+                <ActionIcon type={action.type} />
               </div>
-              {action.description ? <p>{action.description}</p> : null}
-              <span>{actionLabels[action.type]}</span>
-            </div>
-          </li>
-        ))}
+              <div className="timelineContent">
+                <div className="timelineTopline">
+                  <h3>{actionCopy.title}</h3>
+                  <time dateTime={action.createdAt}>
+                    {formatTime(action.createdAt, getLocale(language))}
+                  </time>
+                </div>
+                {actionCopy.description ? <p>{actionCopy.description}</p> : null}
+                <span>{getActionLabel(action.type, t)}</span>
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
@@ -737,6 +1218,7 @@ function ActionIcon({ type }: { type: PrintActionType }) {
 
 type CommandBarProps = {
   command: string;
+  t: Translator;
   onCommandChange: (command: string) => void;
   onCommandSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onAttach: () => void;
@@ -744,6 +1226,7 @@ type CommandBarProps = {
 
 function CommandBar({
   command,
+  t,
   onCommandChange,
   onCommandSubmit,
   onAttach,
@@ -754,17 +1237,17 @@ function CommandBar({
         className="iconButton"
         type="button"
         onClick={onAttach}
-        aria-label="Attach mocked file"
+        aria-label={t("attachMockedFile")}
       >
         <Paperclip size={17} />
       </button>
       <input
         value={command}
         onChange={(event) => onCommandChange(event.target.value)}
-        placeholder="Type print instruction..."
-        aria-label="Print instruction"
+        placeholder={t("commandPlaceholder")}
+        aria-label={t("printInstruction")}
       />
-      <button className="sendButton" type="submit" aria-label="Send print instruction">
+      <button className="sendButton" type="submit" aria-label={t("sendPrintInstruction")}>
         <Send size={17} />
       </button>
     </form>
@@ -776,6 +1259,8 @@ type PreferencesPanelProps = {
   status: PrinterStatus;
   profiles: PrinterProfile[];
   selectedProfileId: string;
+  language: LanguageCode;
+  t: Translator;
   canPrint: boolean;
   disabledReason: string;
   isOpen: boolean;
@@ -795,6 +1280,8 @@ function PreferencesPanel({
   status,
   profiles,
   selectedProfileId,
+  language,
+  t,
   canPrint,
   disabledReason,
   isOpen,
@@ -810,21 +1297,25 @@ function PreferencesPanel({
   return (
     <aside className={`preferencesPanel ${isOpen ? "isOpen" : ""}`}>
       <div className="mobilePanelHeader">
-        <button className="iconButton" type="button" onClick={onClose} aria-label="Close settings">
+        <button className="iconButton" type="button" onClick={onClose} aria-label={t("closeSettings")}>
           <X size={17} />
         </button>
       </div>
 
       <div className="preferencesHeader">
-        <h2>Print settings</h2>
-        <p>{chat.file ? formatShortDate(chat.updatedAt) : "Waiting for upload"}</p>
+        <h2>{t("settingsTitle")}</h2>
+        <p>
+          {chat.file
+            ? formatShortDate(chat.updatedAt, getLocale(language))
+            : t("waitingForUpload")}
+        </p>
       </div>
 
       <div className="settingsStack">
         <section className="settingsGroup">
-          <h3>Pages</h3>
+          <h3>{t("pages")}</h3>
           <label className="field">
-            <span>Copies</span>
+            <span>{t("copies")}</span>
             <input
               min={1}
               max={99}
@@ -839,27 +1330,27 @@ function PreferencesPanel({
             />
           </label>
           <label className="field">
-            <span>Page range</span>
+            <span>{t("pageRange")}</span>
             <input
-              value={settings.pageRange}
+              value={formatPageRangeInput(settings.pageRange, t)}
               onChange={(event) =>
-                onSettingChange("pageRange", event.target.value || "all")
+                onSettingChange("pageRange", parsePageRangeInput(event.target.value))
               }
-              placeholder="all or 1-3"
+              placeholder={t("pageRangePlaceholder")}
             />
           </label>
         </section>
 
         <section className="settingsGroup">
-          <h3>Color</h3>
-          <div className="segmentedControl" aria-label="Color mode">
+          <h3>{t("color")}</h3>
+          <div className="segmentedControl" aria-label={t("color")}>
             <button
               type="button"
               className={settings.colorMode === "color" ? "isSelected" : ""}
               aria-pressed={settings.colorMode === "color"}
               onClick={() => onSettingChange("colorMode", "color")}
             >
-              Color
+              {t("color")}
             </button>
             <button
               type="button"
@@ -867,15 +1358,15 @@ function PreferencesPanel({
               aria-pressed={settings.colorMode === "grayscale"}
               onClick={() => onSettingChange("colorMode", "grayscale")}
             >
-              Grayscale
+              {t("grayscale")}
             </button>
           </div>
         </section>
 
         <section className="settingsGroup">
-          <h3>Layout</h3>
+          <h3>{t("layout")}</h3>
           <label className="field">
-            <span>Paper size</span>
+            <span>{t("paperSize")}</span>
             <select
               value={settings.paperSize}
               onChange={(event) => onSettingChange("paperSize", event.target.value)}
@@ -886,7 +1377,7 @@ function PreferencesPanel({
             </select>
           </label>
           <label className="field">
-            <span>Orientation</span>
+            <span>{t("orientation")}</span>
             <select
               value={settings.orientation}
               onChange={(event) =>
@@ -896,12 +1387,12 @@ function PreferencesPanel({
                 )
               }
             >
-              <option value="portrait">Portrait</option>
-              <option value="landscape">Landscape</option>
+              <option value="portrait">{t("option.portrait")}</option>
+              <option value="landscape">{t("option.landscape")}</option>
             </select>
           </label>
           <label className="field">
-            <span>Duplex</span>
+            <span>{t("duplex")}</span>
             <select
               value={settings.duplex}
               onChange={(event) =>
@@ -911,9 +1402,9 @@ function PreferencesPanel({
                 )
               }
             >
-              <option value="none">None</option>
-              <option value="long-edge">Long edge</option>
-              <option value="short-edge">Short edge</option>
+              <option value="none">{t("duplex.none")}</option>
+              <option value="long-edge">{t("duplex.longEdge")}</option>
+              <option value="short-edge">{t("duplex.shortEdge")}</option>
             </select>
           </label>
           <label className="checkboxField">
@@ -922,31 +1413,31 @@ function PreferencesPanel({
               checked={settings.fitToPage}
               onChange={(event) => onSettingChange("fitToPage", event.target.checked)}
             />
-            <span>Fit to page</span>
+            <span>{t("fitToPage")}</span>
           </label>
         </section>
 
         <section className="settingsGroup">
-          <h3>Quality</h3>
+          <h3>{t("quality")}</h3>
           <label className="field">
-            <span>Output quality</span>
+            <span>{t("outputQuality")}</span>
             <select
               value={settings.quality}
               onChange={(event) =>
                 onSettingChange("quality", event.target.value as PrintSettings["quality"])
               }
             >
-              <option value="draft">Draft</option>
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
+              <option value="draft">{t("option.draft")}</option>
+              <option value="normal">{t("option.normal")}</option>
+              <option value="high">{t("option.high")}</option>
             </select>
           </label>
         </section>
 
         <section className="settingsGroup settingsGroup-last">
-          <h3>Advanced</h3>
+          <h3>{t("advanced")}</h3>
           <label className="field">
-            <span>Printer profile</span>
+            <span>{t("printerProfile")}</span>
             <select
               value={selectedProfileId}
               onChange={(event) => onProfileChange(event.target.value)}
@@ -959,15 +1450,21 @@ function PreferencesPanel({
             </select>
           </label>
           <div className="printPlan">
-            <p>Current plan</p>
+            <p>{t("currentPlan")}</p>
             <strong>
-              {settings.copies} copy{settings.copies === 1 ? "" : "ies"},{" "}
-              {settings.pageRange === "all"
-                ? "all pages"
-                : `pages ${settings.pageRange}`}
+              {formatCopyCount(settings.copies, language, t)},{" "}
+              {formatPageRange(settings.pageRange, t)}
             </strong>
             <span>
-              {settings.paperSize}, {settings.orientation}, {settings.colorMode}
+              {settings.paperSize}, {t(
+                settings.orientation === "portrait"
+                  ? "option.portrait"
+                  : "option.landscape",
+              )}, {t(
+                settings.colorMode === "grayscale"
+                  ? "colorMode.grayscale"
+                  : "colorMode.color",
+              )}
             </span>
           </div>
         </section>
@@ -976,20 +1473,20 @@ function PreferencesPanel({
       <div className="preferenceActions">
         <button className="primaryPrintButton" type="button" disabled={!canPrint} onClick={onPrint}>
           <Printer size={17} />
-          {canPrint ? "Print" : disabledReason}
+          {canPrint ? t("print") : disabledReason}
         </button>
         <div className="secondaryActions">
           <button type="button" onClick={onPreview}>
             <Eye size={15} />
-            Preview
+            {t("action.preview")}
           </button>
           <button type="button" onClick={onSavePreset}>
             <Save size={15} />
-            Save preset
+            {t("savePreset")}
           </button>
         </div>
         <p className={`printerReadyNote printerReadyNote-${status}`}>
-          Printer status: {statusLabels[status]}
+          {t("printerStatus", { status: getStatusLabel(status, t) })}
         </p>
       </div>
     </aside>

@@ -6,30 +6,14 @@ export const formatFileSize = (bytes: number) => {
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
 };
 
-export const formatMimeType = (mimeType: string) => {
-  if (mimeType === "application/pdf") {
-    return "PDF document";
-  }
-
-  if (mimeType.startsWith("image/")) {
-    return `${mimeType.split("/")[1]?.toUpperCase() ?? "Image"} image`;
-  }
-
-  if (mimeType === "text/plain") {
-    return "Text document";
-  }
-
-  return mimeType;
-};
-
-export const formatTime = (isoDate: string) =>
-  new Intl.DateTimeFormat("en", {
+export const formatTime = (isoDate: string, locale = "en-US") =>
+  new Intl.DateTimeFormat(locale, {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(isoDate));
 
-export const formatShortDate = (isoDate: string) =>
-  new Intl.DateTimeFormat("en", {
+export const formatShortDate = (isoDate: string, locale = "en-US") =>
+  new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     hour: "numeric",
