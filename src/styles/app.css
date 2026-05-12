@@ -1,5 +1,8 @@
 .appFrame {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   padding: 12px;
 }
 
@@ -7,7 +10,9 @@
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr) 260px;
   width: 100%;
-  min-height: calc(100vh - 24px);
+  height: calc(100vh - 24px);
+  height: calc(100dvh - 24px);
+  min-height: 0;
   margin: 0 auto;
   overflow: hidden;
   background: var(--shell-bg);
@@ -31,6 +36,7 @@
 .printerSidebar {
   display: flex;
   min-height: 0;
+  overflow: hidden;
   padding: 18px 14px 14px;
   flex-direction: column;
   gap: 18px;
@@ -103,29 +109,43 @@
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--offline);
-  box-shadow: 0 0 0 3px oklch(0.6 0.02 150 / 0.12);
 }
 
 .statusDot-ready,
 .flowStatusDot-ready,
-.flowStatusDot-printed,
-.timelineItem-print_completed .timelineIcon {
+.flowStatusDot-printed {
   background: var(--ready);
 }
 
 .statusDot-warning,
-.flowStatusDot-queued,
-.timelineItem-warning .timelineIcon,
-.timelineItem-print_submitted .timelineIcon {
+.flowStatusDot-queued {
   background: var(--warning);
 }
 
 .statusDot-error,
 .flowStatusDot-error,
-.flowStatusDot-cancelled,
+.flowStatusDot-cancelled {
+  background: var(--error);
+}
+
+.timelineItem-print_completed .timelineIcon {
+  color: var(--ready);
+  background: color-mix(in oklch, var(--ready) 14%, var(--panel-bg));
+  border-color: color-mix(in oklch, var(--ready) 30%, var(--border-soft));
+}
+
+.timelineItem-warning .timelineIcon,
+.timelineItem-print_submitted .timelineIcon {
+  color: var(--warning);
+  background: color-mix(in oklch, var(--warning) 16%, var(--panel-bg));
+  border-color: color-mix(in oklch, var(--warning) 30%, var(--border-soft));
+}
+
 .timelineItem-error .timelineIcon,
 .timelineItem-print_cancelled .timelineIcon {
-  background: var(--error);
+  color: var(--error);
+  background: color-mix(in oklch, var(--error) 13%, var(--panel-bg));
+  border-color: color-mix(in oklch, var(--error) 30%, var(--border-soft));
 }
 
 .printerMeta {
@@ -165,6 +185,7 @@
   flex: 1;
   flex-direction: column;
   gap: 6px;
+  overflow: auto;
 }
 
 .flowList h2 {
@@ -304,7 +325,7 @@
 
 .workspaceHeader {
   display: flex;
-  padding: 22px 24px 16px;
+  padding: 18px 22px 14px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
@@ -318,7 +339,7 @@
 .workspaceTitle h1 {
   overflow: hidden;
   max-width: 60ch;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 700;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -349,11 +370,11 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 7px;
-  padding: 6px 8px;
+  padding: 3px 0;
   color: var(--text-secondary);
-  background: var(--panel-bg);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   font-size: 12px;
   font-weight: 600;
 }
@@ -361,23 +382,22 @@
 .workspaceBody {
   display: grid;
   min-height: 0;
-  padding: 18px 24px;
+  padding: 14px 22px;
   align-content: start;
-  gap: 14px;
+  gap: 12px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .uploadZone {
   display: grid;
-  min-height: 235px;
+  min-height: 205px;
   place-items: center;
   align-content: center;
   gap: 8px;
   color: var(--text-secondary);
-  background:
-    linear-gradient(var(--panel-bg), var(--panel-bg)) padding-box,
-    linear-gradient(140deg, var(--accent-soft), transparent 44%, var(--border-soft)) border-box;
-  border: 1px dashed transparent;
+  background: var(--panel-bg);
+  border: 1px dashed color-mix(in oklch, var(--accent-soft) 58%, var(--border-soft));
   border-radius: var(--radius-control);
 }
 
@@ -398,9 +418,9 @@
 
 .filePreview {
   display: grid;
-  grid-template-columns: minmax(180px, 0.62fr) minmax(260px, 1fr);
-  gap: 18px;
-  padding: 16px;
+  grid-template-columns: minmax(200px, 300px) minmax(260px, 1fr);
+  gap: 14px;
+  padding: 14px;
   background: var(--panel-bg);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
@@ -444,7 +464,7 @@
 
 .previewStage {
   display: grid;
-  min-height: 235px;
+  min-height: 205px;
   place-items: center;
   background: oklch(0.965 0.006 80);
   border: 1px solid var(--border-soft);
@@ -453,9 +473,9 @@
 
 .paperPreview {
   display: grid;
-  width: min(78%, 238px);
-  min-height: 210px;
-  padding: 16px;
+  width: min(74%, 218px);
+  min-height: 178px;
+  padding: 14px;
   grid-template-rows: auto 1fr auto;
   background: oklch(0.995 0.004 82);
   border: 1px solid var(--border-strong);
@@ -464,8 +484,8 @@
 }
 
 .paperPreview-landscape {
-  width: min(86%, 286px);
-  min-height: 176px;
+  width: min(82%, 262px);
+  min-height: 152px;
 }
 
 .paperHeader,
@@ -511,9 +531,9 @@
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 10px;
-  padding: 12px;
-  background: var(--accent-bg);
-  border: 1px solid color-mix(in oklch, var(--accent-soft) 44%, var(--border-soft));
+  padding: 10px 12px;
+  background: color-mix(in oklch, var(--accent-bg) 48%, var(--panel-bg));
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
 }
 
@@ -540,7 +560,7 @@
 }
 
 .timeline {
-  padding: 14px 14px 4px;
+  padding: 12px 14px 2px;
   background: var(--panel-bg);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
@@ -570,24 +590,25 @@
 
 .timelineItem {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  gap: 10px;
-  padding-bottom: 12px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  padding-bottom: 8px;
 }
 
 .timelineIcon {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  color: var(--panel-bg);
-  background: var(--accent);
+  color: var(--text-secondary);
+  background: var(--main-bg);
+  border: 1px solid var(--border-soft);
   border-radius: 50%;
 }
 
 .timelineContent {
   min-width: 0;
-  padding-bottom: 12px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -626,8 +647,8 @@
 }
 
 .timelineContent span {
-  display: block;
-  margin-top: 5px;
+  display: none;
+  margin-top: 0;
   color: var(--text-muted);
   font-size: 11px;
 }
@@ -636,7 +657,7 @@
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) 38px;
   gap: 8px;
-  padding: 14px 24px 18px;
+  padding: 12px 22px 14px;
   background: var(--main-bg);
   border-top: 1px solid var(--border-soft);
 }
@@ -699,19 +720,20 @@
 .preferencesPanel {
   display: flex;
   min-height: 0;
-  padding: 18px 14px;
   flex-direction: column;
-  gap: 14px;
-  overflow: auto;
+  overflow: hidden;
+  padding: 0;
   background: var(--panel-bg);
   border-left: 1px solid var(--border-soft);
 }
 
 .preferencesHeader {
   display: flex;
+  padding: 18px 14px 12px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .preferencesHeader h2 {
@@ -728,11 +750,25 @@
   font-size: 11px;
 }
 
+.settingsStack {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  gap: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px;
+}
+
 .settingsGroup {
   display: grid;
-  gap: 9px;
-  padding-bottom: 14px;
+  gap: 7px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border-soft);
+}
+
+.settingsGroup-last {
+  border-bottom: 0;
 }
 
 .settingsGroup h3 {
@@ -753,7 +789,7 @@
 .settingsGroup select {
   width: 100%;
   min-width: 0;
-  height: 34px;
+  height: 32px;
   padding: 0 9px;
   color: var(--text-primary);
   background: var(--field-bg);
@@ -825,8 +861,9 @@
 .preferenceActions {
   display: grid;
   gap: 10px;
-  margin-top: auto;
-  padding-top: 4px;
+  padding: 12px 14px 14px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border-soft);
 }
 
 .primaryPrintButton {
@@ -872,75 +909,99 @@
   font-size: 11px;
 }
 
-@media (max-width: 1050px) {
+@media (max-width: 1180px) {
   .appShell {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 230px minmax(0, 1fr);
   }
 
   .mobileTopbar {
     display: flex;
     padding: 12px 16px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 10px;
     background: var(--main-bg);
     border-bottom: 1px solid var(--border-soft);
   }
 
-  .printerSidebar,
+  .mobileTopbar .textIconButton:first-child {
+    display: none;
+  }
+
   .preferencesPanel {
     position: fixed;
-    top: 16px;
-    bottom: 16px;
+    top: 12px;
+    bottom: 12px;
+    right: 12px;
     z-index: 20;
-    width: min(300px, calc(100vw - 32px));
+    width: min(300px, calc(100vw - 24px));
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
     box-shadow: 0 2px 8px var(--shadow-soft);
-  }
-
-  .printerSidebar {
-    left: 16px;
-    transform: translateX(calc(-100% - 20px));
-  }
-
-  .preferencesPanel {
-    right: 16px;
     transform: translateX(calc(100% + 20px));
   }
 
-  .printerSidebar.isOpen,
   .preferencesPanel.isOpen {
     transform: translateX(0);
   }
 
-  .mobilePanelHeader {
+  .preferencesPanel .mobilePanelHeader {
     display: flex;
     justify-content: flex-end;
+    padding: 10px 10px 0;
   }
 }
 
 @media (max-width: 760px) {
   .appFrame {
+    height: 100vh;
+    height: 100dvh;
     padding: 0;
   }
 
   .appShell {
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
     border: 0;
     border-radius: 0;
   }
 
-  .printerSidebar,
-  .preferencesPanel {
-    top: 0;
-    bottom: 0;
+  .mobileTopbar {
+    justify-content: space-between;
+  }
+
+  .mobileTopbar .textIconButton:first-child {
+    display: inline-flex;
   }
 
   .printerSidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
     left: 0;
+    z-index: 20;
+    width: min(300px, calc(100vw - 24px));
+    box-shadow: 0 2px 8px var(--shadow-soft);
+    transform: translateX(calc(-100% - 20px));
+  }
+
+  .printerSidebar.isOpen {
+    transform: translateX(0);
   }
 
   .preferencesPanel {
+    top: 0;
+    bottom: 0;
     right: 0;
+    width: min(320px, calc(100vw - 24px));
+    border-radius: 0;
+  }
+
+  .printerSidebar .mobilePanelHeader {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .workspaceHeader {

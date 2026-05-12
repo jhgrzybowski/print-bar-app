@@ -809,156 +809,158 @@ function PreferencesPanel({
         <p>{chat.file ? formatShortDate(chat.updatedAt) : "Waiting for upload"}</p>
       </div>
 
-      <section className="settingsGroup">
-        <h3>Pages</h3>
-        <label className="field">
-          <span>Copies</span>
-          <input
-            min={1}
-            max={99}
-            type="number"
-            value={settings.copies}
-            onChange={(event) =>
-              onSettingChange(
-                "copies",
-                Math.max(1, Number(event.target.value) || 1),
-              )
-            }
-          />
-        </label>
-        <label className="field">
-          <span>Page range</span>
-          <input
-            value={settings.pageRange}
-            onChange={(event) =>
-              onSettingChange("pageRange", event.target.value || "all")
-            }
-            placeholder="all or 1-3"
-          />
-        </label>
-      </section>
+      <div className="settingsStack">
+        <section className="settingsGroup">
+          <h3>Pages</h3>
+          <label className="field">
+            <span>Copies</span>
+            <input
+              min={1}
+              max={99}
+              type="number"
+              value={settings.copies}
+              onChange={(event) =>
+                onSettingChange(
+                  "copies",
+                  Math.max(1, Number(event.target.value) || 1),
+                )
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Page range</span>
+            <input
+              value={settings.pageRange}
+              onChange={(event) =>
+                onSettingChange("pageRange", event.target.value || "all")
+              }
+              placeholder="all or 1-3"
+            />
+          </label>
+        </section>
 
-      <section className="settingsGroup">
-        <h3>Color</h3>
-        <div className="segmentedControl" aria-label="Color mode">
-          <button
-            type="button"
-            className={settings.colorMode === "color" ? "isSelected" : ""}
-            aria-pressed={settings.colorMode === "color"}
-            onClick={() => onSettingChange("colorMode", "color")}
-          >
-            Color
-          </button>
-          <button
-            type="button"
-            className={settings.colorMode === "grayscale" ? "isSelected" : ""}
-            aria-pressed={settings.colorMode === "grayscale"}
-            onClick={() => onSettingChange("colorMode", "grayscale")}
-          >
-            Grayscale
-          </button>
-        </div>
-      </section>
+        <section className="settingsGroup">
+          <h3>Color</h3>
+          <div className="segmentedControl" aria-label="Color mode">
+            <button
+              type="button"
+              className={settings.colorMode === "color" ? "isSelected" : ""}
+              aria-pressed={settings.colorMode === "color"}
+              onClick={() => onSettingChange("colorMode", "color")}
+            >
+              Color
+            </button>
+            <button
+              type="button"
+              className={settings.colorMode === "grayscale" ? "isSelected" : ""}
+              aria-pressed={settings.colorMode === "grayscale"}
+              onClick={() => onSettingChange("colorMode", "grayscale")}
+            >
+              Grayscale
+            </button>
+          </div>
+        </section>
 
-      <section className="settingsGroup">
-        <h3>Layout</h3>
-        <label className="field">
-          <span>Paper size</span>
-          <select
-            value={settings.paperSize}
-            onChange={(event) => onSettingChange("paperSize", event.target.value)}
-          >
-            <option>A4</option>
-            <option>A5</option>
-            <option>Letter</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Orientation</span>
-          <select
-            value={settings.orientation}
-            onChange={(event) =>
-              onSettingChange(
-                "orientation",
-                event.target.value as PrintSettings["orientation"],
-              )
-            }
-          >
-            <option value="portrait">Portrait</option>
-            <option value="landscape">Landscape</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Duplex</span>
-          <select
-            value={settings.duplex}
-            onChange={(event) =>
-              onSettingChange(
-                "duplex",
-                event.target.value as PrintSettings["duplex"],
-              )
-            }
-          >
-            <option value="none">None</option>
-            <option value="long-edge">Long edge</option>
-            <option value="short-edge">Short edge</option>
-          </select>
-        </label>
-        <label className="checkboxField">
-          <input
-            type="checkbox"
-            checked={settings.fitToPage}
-            onChange={(event) => onSettingChange("fitToPage", event.target.checked)}
-          />
-          <span>Fit to page</span>
-        </label>
-      </section>
+        <section className="settingsGroup">
+          <h3>Layout</h3>
+          <label className="field">
+            <span>Paper size</span>
+            <select
+              value={settings.paperSize}
+              onChange={(event) => onSettingChange("paperSize", event.target.value)}
+            >
+              <option>A4</option>
+              <option>A5</option>
+              <option>Letter</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Orientation</span>
+            <select
+              value={settings.orientation}
+              onChange={(event) =>
+                onSettingChange(
+                  "orientation",
+                  event.target.value as PrintSettings["orientation"],
+                )
+              }
+            >
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Duplex</span>
+            <select
+              value={settings.duplex}
+              onChange={(event) =>
+                onSettingChange(
+                  "duplex",
+                  event.target.value as PrintSettings["duplex"],
+                )
+              }
+            >
+              <option value="none">None</option>
+              <option value="long-edge">Long edge</option>
+              <option value="short-edge">Short edge</option>
+            </select>
+          </label>
+          <label className="checkboxField">
+            <input
+              type="checkbox"
+              checked={settings.fitToPage}
+              onChange={(event) => onSettingChange("fitToPage", event.target.checked)}
+            />
+            <span>Fit to page</span>
+          </label>
+        </section>
 
-      <section className="settingsGroup">
-        <h3>Quality</h3>
-        <label className="field">
-          <span>Output quality</span>
-          <select
-            value={settings.quality}
-            onChange={(event) =>
-              onSettingChange("quality", event.target.value as PrintSettings["quality"])
-            }
-          >
-            <option value="draft">Draft</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-          </select>
-        </label>
-      </section>
+        <section className="settingsGroup">
+          <h3>Quality</h3>
+          <label className="field">
+            <span>Output quality</span>
+            <select
+              value={settings.quality}
+              onChange={(event) =>
+                onSettingChange("quality", event.target.value as PrintSettings["quality"])
+              }
+            >
+              <option value="draft">Draft</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+        </section>
 
-      <section className="settingsGroup">
-        <h3>Advanced</h3>
-        <label className="field">
-          <span>Printer profile</span>
-          <select
-            value={selectedProfileId}
-            onChange={(event) => onProfileChange(event.target.value)}
-          >
-            {profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="printPlan">
-          <p>Current plan</p>
-          <strong>
-            {settings.copies} copy{settings.copies === 1 ? "" : "ies"},{" "}
-            {settings.pageRange === "all"
-              ? "all pages"
-              : `pages ${settings.pageRange}`}
-          </strong>
-          <span>
-            {settings.paperSize}, {settings.orientation}, {settings.colorMode}
-          </span>
-        </div>
-      </section>
+        <section className="settingsGroup settingsGroup-last">
+          <h3>Advanced</h3>
+          <label className="field">
+            <span>Printer profile</span>
+            <select
+              value={selectedProfileId}
+              onChange={(event) => onProfileChange(event.target.value)}
+            >
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="printPlan">
+            <p>Current plan</p>
+            <strong>
+              {settings.copies} copy{settings.copies === 1 ? "" : "ies"},{" "}
+              {settings.pageRange === "all"
+                ? "all pages"
+                : `pages ${settings.pageRange}`}
+            </strong>
+            <span>
+              {settings.paperSize}, {settings.orientation}, {settings.colorMode}
+            </span>
+          </div>
+        </section>
+      </div>
 
       <div className="preferenceActions">
         <button className="primaryPrintButton" type="button" disabled={!canPrint} onClick={onPrint}>
