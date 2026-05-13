@@ -52,6 +52,8 @@ import {
 type SettingsKey = keyof PrintSettings;
 
 const languageStorageKey = "print-bar-language";
+const MAX_COPIES = 99;
+const MIN_COPIES = 1;
 
 type CountTranslationKeySet = Partial<
   Record<Intl.LDMLPluralRule, TranslationKey>
@@ -191,13 +193,42 @@ const actionCopyKeys: Partial<
   },
 };
 
+// Validation helpers for print settings and state
+const isValidCopies = (copies: number): boolean =>
+  Number.isInteger(copies) && copies >= MIN_COPIES && copies <= MAX_COPIES;
+
+const isValidPageRange = (pageRange: string): boolean => {
+  if (pageRange === "all") return true;
+  // Allow formats: "1", "1-5", "1,3,5", "1-5,7,9-10"
+  return /^(\d+(-\d+)?)(,\d+(-\d+)?)*$/.test(pageRange);
+};
+
+// UUID generator with fallback for non-secure contexts (HTTP on LAN)
+const generateId = (): string => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // Fallback if randomUUID fails despite being available
+    }
+  }
+
+  // Fallback using getRandomValues for HTTP contexts
+  const template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+  return template.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 const makeAction = (
   type: PrintActionType,
   title: string,
   description: string,
   metadata?: PrintAction["metadata"],
 ): PrintAction => ({
-  id: crypto.randomUUID(),
+  id: generateId(),
   type,
   title,
   description,
@@ -336,14 +367,15 @@ const formatPageRange = (pageRange: PrintSettings["pageRange"], t: Translator) =
 
 const formatPageRangeInput = (
   pageRange: PrintSettings["pageRange"],
-  t: Translator,
-) => (pageRange === "all" ? t("pageRangeAllInput") : pageRange);
+) => (pageRange === "all" ? "" : pageRange);
 
 const parsePageRangeInput = (value: string): PrintSettings["pageRange"] => {
-  const normalized = value.trim().toLowerCase();
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
 
+  // Empty input or explicit "all" variants → default to "all"
   if (
-    !normalized ||
+    !trimmed ||
     normalized === "all" ||
     normalized === "wszystkie" ||
     normalized === "calosc" ||
@@ -352,7 +384,9 @@ const parsePageRangeInput = (value: string): PrintSettings["pageRange"] => {
     return "all";
   }
 
-  return value;
+  // Return as-is: dashes, commas, and digits are now allowed during input
+  // Validation happens in isValidPageRange and canPrint, not here
+  return trimmed;
 };
 
 const inferCommandSettings = (
@@ -442,6 +476,86 @@ const getFlowMeta = (
   return `${pageText} / ${mode}`;
 };
 
+const getSettingChangeDescription = (
+  key: SettingsKey,
+  value: PrintSettings[SettingsKey],
+  t: Translator,
+): { title: string; description: string } => {
+  const baseTitle = t("action.settings");
+
+  if (key === "copies") {
+    return {
+      title: baseTitle,
+      description: `${t("copies")}: ${value}`,
+    };
+  }
+
+  if (key === "pageRange") {
+    const displayValue = value === "all" ? t("allPages") : value;
+    return {
+      title: baseTitle,
+      description: `${t("pageRange")}: ${displayValue}`,
+    };
+  }
+
+  if (key === "colorMode") {
+    const displayValue = value === "grayscale" ? t("colorMode.grayscale") : t("colorMode.color");
+    return {
+      title: baseTitle,
+      description: `${t("color")}: ${displayValue}`,
+    };
+  }
+
+  if (key === "paperSize") {
+    return {
+      title: baseTitle,
+      description: `${t("paper")}: ${value}`,
+    };
+  }
+
+  if (key === "orientation") {
+    const displayValue = value === "landscape" ? t("option.landscape") : t("option.portrait");
+    return {
+      title: baseTitle,
+      description: `${t("orientation")}: ${displayValue}`,
+    };
+  }
+
+  if (key === "duplex") {
+    const displayValue =
+      value === "none"
+        ? t("duplex.none")
+        : value === "long-edge"
+          ? t("duplex.longEdge")
+          : t("duplex.shortEdge");
+    return {
+      title: baseTitle,
+      description: `${t("duplex")}: ${displayValue}`,
+    };
+  }
+
+  if (key === "quality") {
+    // Quality values don't have translation keys, display as-is
+    return {
+      title: baseTitle,
+      description: `${t("quality")}: ${String(value).charAt(0).toUpperCase() + String(value).slice(1)}`,
+    };
+  }
+
+  if (key === "fitToPage") {
+    const displayValue = value ? "On" : "Off";
+    return {
+      title: baseTitle,
+      description: `${t("fitToPage")}: ${displayValue}`,
+    };
+  }
+
+  return {
+    title: baseTitle,
+    description: "",
+  };
+};
+
 const getDisabledReason = (
   chat: PrintChat,
   status: PrinterStatus,
@@ -474,6 +588,7 @@ function App() {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  const [lastChangedSettingKey, setLastChangedSettingKey] = useState<SettingsKey | null>(null);
 
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0];
@@ -492,7 +607,17 @@ function App() {
     "--accent-bg": selectedProfile.accentBgColor,
   } as CSSProperties;
 
-  const canPrint = Boolean(selectedChat.file && printerStatus === "ready");
+  const canPrint = Boolean(
+    selectedChat.file &&
+      printerStatus === "ready" &&
+      (selectedChat.status === "draft" || selectedChat.status === "ready") &&
+      isValidCopies(selectedChat.settings.copies) &&
+      isValidPageRange(
+        selectedChat.settings.pageRange === "all"
+          ? "all"
+          : selectedChat.settings.pageRange,
+      )
+  );
   const disabledReason = getDisabledReason(selectedChat, printerStatus, t);
 
   useEffect(() => {
@@ -507,6 +632,11 @@ function App() {
     }
   }, [language]);
 
+  useEffect(() => {
+    // Reset setting tracker when chat changes
+    setLastChangedSettingKey(null);
+  }, [selectedChatId]);
+
   const updateSelectedChat = (updater: (chat: PrintChat) => PrintChat) => {
     setPrintChats((currentChats) =>
       currentChats.map((chat) =>
@@ -519,14 +649,51 @@ function App() {
     key: Key,
     value: PrintSettings[Key],
   ) => {
-    updateSelectedChat((chat) => ({
-      ...chat,
-      settings: {
-        ...chat.settings,
-        [key]: value,
-      },
-      updatedAt: new Date().toISOString(),
-    }));
+    // Only add action if switching to a different setting or first time
+    const shouldAddAction = lastChangedSettingKey !== key;
+
+    if (shouldAddAction) {
+      setLastChangedSettingKey(key);
+    }
+
+    updateSelectedChat((chat) => {
+      let actions = chat.actions;
+
+      if (shouldAddAction) {
+        // New setting: add a fresh action
+        actions = [
+          ...chat.actions,
+          makeAction(
+            "settings_changed",
+            getSettingChangeDescription(key, value, t).title,
+            getSettingChangeDescription(key, value, t).description,
+          ),
+        ];
+      } else {
+        // Same setting: update the last action's description dynamically
+        const lastAction = actions[actions.length - 1];
+        if (lastAction && lastAction.type === "settings_changed") {
+          const description = getSettingChangeDescription(key, value, t);
+          actions = [
+            ...actions.slice(0, -1),
+            {
+              ...lastAction,
+              description: description.description,
+            },
+          ];
+        }
+      }
+
+      return {
+        ...chat,
+        settings: {
+          ...chat.settings,
+          [key]: value,
+        },
+        actions,
+        updatedAt: new Date().toISOString(),
+      };
+    });
   };
 
   const addTranslatedActionToSelectedChat = (
@@ -549,7 +716,11 @@ function App() {
     const profile = profiles.find((item) => item.id === profileId);
     setSelectedProfileId(profileId);
 
-    if (!profile?.defaultSettings) {
+    // Only apply default settings to draft or ready flows; don't mutate historical prints
+    if (
+      !profile?.defaultSettings ||
+      (selectedChat.status !== "draft" && selectedChat.status !== "ready")
+    ) {
       return;
     }
 
@@ -574,6 +745,7 @@ function App() {
   };
 
   const handleMockUpload = () => {
+    setLastChangedSettingKey(null);
     updateSelectedChat((chat) => ({
       ...chat,
       title: mockUploadFile.name,
@@ -690,6 +862,11 @@ function App() {
     updateSelectedChat((chat) => ({
       ...chat,
       status: "queued",
+      settings: {
+        ...chat.settings,
+        // Clamp copies to valid range before submission
+        copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, chat.settings.copies)),
+      },
       actions: [
         ...chat.actions,
         makeTranslatedAction(
@@ -698,7 +875,11 @@ function App() {
           "chat.printSubmitted.description",
           t,
           {
-            copies: formatCopyCount(chat.settings.copies, language, t),
+            copies: formatCopyCount(
+              Math.max(MIN_COPIES, Math.min(MAX_COPIES, chat.settings.copies)),
+              language,
+              t,
+            ),
             fileName: chat.file?.name ?? "",
           },
         ),
@@ -1332,7 +1513,7 @@ function PreferencesPanel({
           <label className="field">
             <span>{t("pageRange")}</span>
             <input
-              value={formatPageRangeInput(settings.pageRange, t)}
+              value={formatPageRangeInput(settings.pageRange)}
               onChange={(event) =>
                 onSettingChange("pageRange", parsePageRangeInput(event.target.value))
               }
