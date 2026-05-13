@@ -1191,6 +1191,36 @@
     box-shadow 180ms var(--ease-out-soft);
 }
 
+.field select,
+.settingsGroup select {
+  appearance: none;
+  padding-right: 32px;
+  background-color: var(--field-bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--surface-highlight) 54%, transparent),
+      color-mix(in oklch, var(--surface-sunken) 38%, transparent)
+    );
+  background-position:
+    calc(100% - 17px) 13px,
+    calc(100% - 12px) 13px,
+    calc(100% - 30px) 5px;
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px,
+    24px 22px;
+}
+
+.field select option,
+.settingsGroup select option {
+  color: var(--text-primary);
+  background: var(--panel-solid);
+}
+
 .field input:hover,
 .field select:hover,
 .settingsGroup select:hover {
@@ -1200,7 +1230,7 @@
 .field input:focus,
 .field select:focus,
 .settingsGroup select:focus {
-  background: var(--surface-raised);
+  background-color: var(--surface-raised);
   box-shadow: var(--shadow-pressed);
 }
 
