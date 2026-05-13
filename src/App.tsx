@@ -615,6 +615,20 @@ function App() {
     "--accent": selectedProfile.accentColor,
     "--accent-soft": selectedProfile.accentSoftColor,
     "--accent-bg": selectedProfile.accentBgColor,
+    "--accent-text": selectedProfile.accentTextColor,
+    "--app-bg": selectedProfile.appBgColor,
+    "--ambient-glow": selectedProfile.ambientGlowColor,
+    "--field-bg": selectedProfile.fieldBgColor,
+    "--main-bg": selectedProfile.mainBgColor,
+    "--panel-bg": selectedProfile.panelBgColor,
+    "--panel-solid": selectedProfile.panelSolidColor,
+    "--paper-bg": selectedProfile.paperBgColor,
+    "--surface-raised": selectedProfile.surfaceRaisedColor,
+    "--surface-soft": selectedProfile.surfaceSoftColor,
+    "--surface-sunken": selectedProfile.surfaceSunkenColor,
+    "--toolbar-bg": selectedProfile.toolbarBgColor,
+    "--workspace-glow": selectedProfile.workspaceGlowColor,
+    "--workspace-header-bg": selectedProfile.workspaceHeaderBgColor,
   } as CSSProperties;
 
   const canPrint = Boolean(

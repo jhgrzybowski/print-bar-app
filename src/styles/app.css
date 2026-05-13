@@ -4,6 +4,13 @@
   min-height: 0;
   overflow: hidden;
   padding: 0;
+  background:
+    radial-gradient(980px 480px at 78% 0%, var(--ambient-glow), transparent 64%),
+    radial-gradient(740px 360px at 48% 100%, color-mix(in oklch, var(--workspace-glow) 64%, transparent), transparent 70%),
+    var(--app-bg);
+  transition:
+    background-color 220ms var(--ease-out-soft),
+    color 220ms var(--ease-out-soft);
 }
 
 .appShell {

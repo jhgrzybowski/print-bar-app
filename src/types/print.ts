@@ -18,6 +18,20 @@ export type PrinterProfile = {
   accentColor: string;
   accentSoftColor: string;
   accentBgColor: string;
+  accentTextColor?: string;
+  appBgColor?: string;
+  ambientGlowColor?: string;
+  fieldBgColor?: string;
+  mainBgColor?: string;
+  panelBgColor?: string;
+  panelSolidColor?: string;
+  paperBgColor?: string;
+  surfaceRaisedColor?: string;
+  surfaceSoftColor?: string;
+  surfaceSunkenColor?: string;
+  toolbarBgColor?: string;
+  workspaceGlowColor?: string;
+  workspaceHeaderBgColor?: string;
   defaultSettings?: Partial<PrintSettings>;
 };
 
