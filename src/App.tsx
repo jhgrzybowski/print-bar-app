@@ -203,6 +203,14 @@ const isValidPageRange = (pageRange: string): boolean => {
   return /^(\d+(-\d+)?)(,\d+(-\d+)?)*$/.test(pageRange);
 };
 
+const sanitizePageRangeInput = (value: string): string =>
+  value
+    .replace(/\s+/g, "")
+    .replace(/[^\d,-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/,{2,}/g, ",")
+    .replace(/,-|-,/g, (match) => match[0]);
+
 // UUID generator with fallback for non-secure contexts (HTTP on LAN)
 const generateId = (): string => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -370,7 +378,7 @@ const formatPageRangeInput = (
 ) => (pageRange === "all" ? "" : pageRange);
 
 const parsePageRangeInput = (value: string): PrintSettings["pageRange"] => {
-  const trimmed = value.trim();
+  const trimmed = sanitizePageRangeInput(value);
   const normalized = trimmed.toLowerCase();
 
   // Empty input or explicit "all" variants → default to "all"
@@ -384,8 +392,6 @@ const parsePageRangeInput = (value: string): PrintSettings["pageRange"] => {
     return "all";
   }
 
-  // Return as-is: dashes, commas, and digits are now allowed during input
-  // Validation happens in isValidPageRange and canPrint, not here
   return trimmed;
 };
 
@@ -567,6 +573,10 @@ const getDisabledReason = (
 
   if (status !== "ready") {
     return t("disabled.printerNotReady");
+  }
+
+  if (!isValidPageRange(chat.settings.pageRange)) {
+    return t("disabled.invalidPageRange");
   }
 
   return "";
