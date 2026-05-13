@@ -63,9 +63,20 @@
 
 .printerIdentity {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
   gap: 10px;
   align-items: center;
+}
+
+.sidebarRefreshButton {
+  width: 34px;
+  height: 34px;
+  color: var(--text-inverse-muted);
+  background: var(--sidebar-bg-strong);
+  border-color: var(--sidebar-hover-border);
+  box-shadow:
+    5px 6px 12px oklch(0.12 0.026 276 / 0.22),
+    -3px -3px 8px oklch(0.48 0.016 276 / 0.08);
 }
 
 .printerIcon {
@@ -194,6 +205,33 @@
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebarNotice {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px;
+  color: var(--text-inverse-muted);
+  background: var(--sidebar-card-bg);
+  border: 1px solid var(--sidebar-card-border);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.sidebarNotice svg {
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.sidebarNotice-error svg,
+.sidebarNotice-offline svg {
+  color: var(--error);
+}
+
+.sidebarNotice p {
+  margin: 0;
 }
 
 .flowList {
@@ -855,6 +893,42 @@
   margin-top: 0;
 }
 
+.previewImage {
+  display: block;
+  max-width: min(100%, 330px);
+  max-height: clamp(236px, 33vh, 344px);
+  object-fit: contain;
+  background: var(--paper-bg);
+  border: 1px solid color-mix(in oklch, var(--border-strong) 74%, var(--surface-highlight));
+  border-radius: 4px;
+  box-shadow: var(--shadow-paper);
+}
+
+.previewState {
+  display: grid;
+  min-height: 190px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.previewState svg {
+  color: var(--accent);
+}
+
+.previewState-error svg {
+  color: var(--error);
+}
+
+.previewState p {
+  max-width: 34ch;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .previewScaleNote {
   max-width: 100%;
   overflow: hidden;
@@ -862,6 +936,41 @@
   font-size: 11px;
   font-weight: 600;
   line-height: 1.3;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewPager {
+  display: grid;
+  width: min(100%, 310px);
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 8px;
+}
+
+.previewPager button {
+  min-height: 28px;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-small);
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: var(--shadow-button);
+}
+
+.previewPager button:disabled {
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  box-shadow: var(--shadow-pressed);
+}
+
+.previewPager span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1234,6 +1343,21 @@
   box-shadow: var(--shadow-pressed);
 }
 
+.field input:disabled,
+.field select:disabled,
+.settingsGroup select:disabled,
+.segmentedControl button:disabled,
+.checkboxField input:disabled {
+  opacity: 0.62;
+}
+
+.settingHint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.42;
+}
+
 .segmentedControl {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1412,6 +1536,76 @@
 }
 
 .printerReadyNote {
+  font-size: 11px;
+}
+
+.jobsPanel {
+  display: grid;
+  gap: 9px;
+  padding: 12px 18px 16px;
+  background: var(--panel-solid);
+  border-top: 1px solid color-mix(in oklch, var(--border-soft) 82%, transparent);
+}
+
+.jobsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.jobsHeader h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.jobsHeader .iconButton,
+.jobsList .iconButton,
+.preferencesHeader .iconButton {
+  width: 30px;
+  height: 30px;
+}
+
+.jobsList {
+  display: grid;
+  gap: 6px;
+  max-height: 170px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.jobsList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+}
+
+.jobsList strong,
+.jobsList span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobsList strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.jobsList span {
+  margin-top: 2px;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 

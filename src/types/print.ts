@@ -9,6 +9,8 @@ export type PrintSettings = {
   duplex: "none" | "long-edge" | "short-edge";
   quality: "draft" | "normal" | "high";
   fitToPage: boolean;
+  collate?: boolean;
+  mediaType?: string;
 };
 
 export type PrinterProfile = {
@@ -41,7 +43,22 @@ export type UploadedFile = {
   mimeType: string;
   sizeBytes: number;
   pageCount?: number;
+  previewAvailable?: boolean;
   previewUrl?: string;
+};
+
+export type PreviewPage = {
+  page: number;
+  sizeBytes: number;
+  url: string;
+};
+
+export type PreviewState = {
+  currentPage: number;
+  error?: string;
+  isLoading: boolean;
+  pageCount?: number;
+  pages: PreviewPage[];
 };
 
 export type PrintActionType =
@@ -69,7 +86,62 @@ export type PrintChat = {
   title: string;
   status: "draft" | "ready" | "queued" | "printed" | "cancelled" | "error";
   file?: UploadedFile;
+  jobId?: number;
+  preview?: PreviewState;
   settings: PrintSettings;
   actions: PrintAction[];
   updatedAt: string;
+};
+
+export type BackendConnectionState = {
+  baseUrl: string;
+  error?: string;
+  isLoading: boolean;
+  lastCheckedAt?: string;
+  reachable: boolean;
+  service?: string;
+};
+
+export type PrinterStatusDetails = {
+  acceptingJobs?: boolean | null;
+  cupsAvailable?: boolean;
+  cupsError?: string | null;
+  enabled?: boolean;
+  exists?: boolean;
+  location?: string | null;
+  message?: string;
+  queueName?: string;
+  reasons: string[];
+  state?: string;
+};
+
+export type PrinterOptionCapability = {
+  choices: string[];
+  mapping: Record<string, string>;
+  notes?: string;
+  recommendedMapping: Record<string, string | null>;
+  supported: boolean;
+};
+
+export type PrinterCapabilities = {
+  collate: PrinterOptionCapability;
+  colorModes: PrinterOptionCapability;
+  duplexModes: PrinterOptionCapability;
+  fitToPage: PrinterOptionCapability;
+  mediaTypes: PrinterOptionCapability;
+  orientation: PrinterOptionCapability;
+  paperSizes: PrinterOptionCapability;
+  quality: PrinterOptionCapability;
+  queue?: string;
+};
+
+export type PrintJob = {
+  completedAt?: string;
+  createdAt?: string;
+  id: number;
+  name?: string;
+  queue?: string;
+  reasons: string[];
+  state?: string;
+  user?: string;
 };
