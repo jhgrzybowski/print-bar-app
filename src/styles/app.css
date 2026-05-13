@@ -432,6 +432,26 @@
   color: var(--text-inverse-muted);
   background: var(--sidebar-bg-strong);
   border-color: var(--sidebar-hover-border);
+  box-shadow:
+    4px 5px 11px oklch(0.1 0.026 276 / 0.28),
+    -2px -2px 7px oklch(0.48 0.016 276 / 0.08),
+    inset 0 1px 0 var(--sidebar-inner-highlight);
+}
+
+.profileSettingsHeader .iconButton:hover {
+  color: var(--text-inverse);
+  background: var(--sidebar-active);
+  border-color: color-mix(in oklch, var(--accent) 26%, var(--sidebar-hover-border));
+  box-shadow:
+    5px 6px 12px oklch(0.09 0.026 276 / 0.3),
+    -2px -2px 7px oklch(0.5 0.016 276 / 0.08),
+    inset 0 1px 0 var(--sidebar-active-highlight);
+}
+
+.profileSettingsHeader .iconButton:active {
+  box-shadow:
+    inset 4px 4px 8px oklch(0.08 0.026 276 / 0.32),
+    inset -3px -3px 7px oklch(0.52 0.014 276 / 0.1);
 }
 
 .profileSettingsSection {
