@@ -197,6 +197,9 @@ const actionCopyKeys: Partial<
 const isValidCopies = (copies: number): boolean =>
   Number.isInteger(copies) && copies >= MIN_COPIES && copies <= MAX_COPIES;
 
+const isEditableChat = (chat: PrintChat): boolean =>
+  chat.status === "draft" || chat.status === "ready";
+
 const isValidPageRange = (pageRange: string): boolean => {
   if (pageRange === "all") return true;
   // Allow formats: "1", "1-5", "1,3,5", "1-5,7,9-10"
@@ -575,6 +578,10 @@ const getDisabledReason = (
     return t("disabled.printerNotReady");
   }
 
+  if (!isEditableChat(chat)) {
+    return t("disabled.historyLocked");
+  }
+
   if (!isValidPageRange(chat.settings.pageRange)) {
     return t("disabled.invalidPageRange");
   }
@@ -598,7 +605,6 @@ function App() {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
-  const [lastChangedSettingKey, setLastChangedSettingKey] = useState<SettingsKey | null>(null);
 
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0];
@@ -634,7 +640,7 @@ function App() {
   const canPrint = Boolean(
     selectedChat.file &&
       printerStatus === "ready" &&
-      (selectedChat.status === "draft" || selectedChat.status === "ready") &&
+      isEditableChat(selectedChat) &&
       isValidCopies(selectedChat.settings.copies) &&
       isValidPageRange(
         selectedChat.settings.pageRange === "all"
@@ -656,11 +662,6 @@ function App() {
     }
   }, [language]);
 
-  useEffect(() => {
-    // Reset setting tracker when chat changes
-    setLastChangedSettingKey(null);
-  }, [selectedChatId]);
-
   const updateSelectedChat = (updater: (chat: PrintChat) => PrintChat) => {
     setPrintChats((currentChats) =>
       currentChats.map((chat) =>
@@ -673,39 +674,41 @@ function App() {
     key: Key,
     value: PrintSettings[Key],
   ) => {
-    // Only add action if switching to a different setting or first time
-    const shouldAddAction = lastChangedSettingKey !== key;
-
-    if (shouldAddAction) {
-      setLastChangedSettingKey(key);
-    }
-
     updateSelectedChat((chat) => {
-      let actions = chat.actions;
+      if (!isEditableChat(chat)) {
+        return chat;
+      }
 
-      if (shouldAddAction) {
-        // New setting: add a fresh action
+      let actions = chat.actions;
+      const description = getSettingChangeDescription(key, value, t);
+      const lastAction = actions[actions.length - 1];
+      const lastSettingKey = lastAction?.metadata?.settingKey;
+
+      if (
+        lastAction?.type === "settings_changed" &&
+        lastSettingKey === key
+      ) {
+        actions = [
+          ...actions.slice(0, -1),
+          {
+            ...lastAction,
+            description: description.description,
+            metadata: {
+              ...lastAction.metadata,
+              settingKey: key,
+            },
+          },
+        ];
+      } else {
         actions = [
           ...chat.actions,
           makeAction(
             "settings_changed",
-            getSettingChangeDescription(key, value, t).title,
-            getSettingChangeDescription(key, value, t).description,
+            description.title,
+            description.description,
+            { settingKey: key },
           ),
         ];
-      } else {
-        // Same setting: update the last action's description dynamically
-        const lastAction = actions[actions.length - 1];
-        if (lastAction && lastAction.type === "settings_changed") {
-          const description = getSettingChangeDescription(key, value, t);
-          actions = [
-            ...actions.slice(0, -1),
-            {
-              ...lastAction,
-              description: description.description,
-            },
-          ];
-        }
       }
 
       return {
@@ -741,10 +744,7 @@ function App() {
     setSelectedProfileId(profileId);
 
     // Only apply default settings to draft or ready flows; don't mutate historical prints
-    if (
-      !profile?.defaultSettings ||
-      (selectedChat.status !== "draft" && selectedChat.status !== "ready")
-    ) {
+    if (!profile?.defaultSettings || !isEditableChat(selectedChat)) {
       return;
     }
 
@@ -769,7 +769,6 @@ function App() {
   };
 
   const handleMockUpload = () => {
-    setLastChangedSettingKey(null);
     updateSelectedChat((chat) => ({
       ...chat,
       title: mockUploadFile.name,
@@ -833,6 +832,10 @@ function App() {
         t,
       );
       const hasSettingChanges = changes.length > 0;
+
+      if (hasSettingChanges && !isEditableChat(chat)) {
+        return chat;
+      }
 
       return {
         ...chat,
@@ -969,6 +972,7 @@ function App() {
           t={t}
           canPrint={canPrint}
           disabledReason={disabledReason}
+          canEditSettings={isEditableChat(selectedChat)}
           isOpen={rightOpen}
           onClose={() => setRightOpen(false)}
           onSettingChange={updateSetting}
@@ -1468,6 +1472,7 @@ type PreferencesPanelProps = {
   t: Translator;
   canPrint: boolean;
   disabledReason: string;
+  canEditSettings: boolean;
   isOpen: boolean;
   onClose: () => void;
   onSettingChange: <Key extends SettingsKey>(
@@ -1489,6 +1494,7 @@ function PreferencesPanel({
   t,
   canPrint,
   disabledReason,
+  canEditSettings,
   isOpen,
   onClose,
   onSettingChange,
@@ -1526,6 +1532,7 @@ function PreferencesPanel({
               max={99}
               type="number"
               value={settings.copies}
+              disabled={!canEditSettings}
               onChange={(event) =>
                 onSettingChange(
                   "copies",
@@ -1538,6 +1545,7 @@ function PreferencesPanel({
             <span>{t("pageRange")}</span>
             <input
               value={formatPageRangeInput(settings.pageRange)}
+              disabled={!canEditSettings}
               onChange={(event) =>
                 onSettingChange("pageRange", parsePageRangeInput(event.target.value))
               }
@@ -1553,6 +1561,7 @@ function PreferencesPanel({
               type="button"
               className={settings.colorMode === "color" ? "isSelected" : ""}
               aria-pressed={settings.colorMode === "color"}
+              disabled={!canEditSettings}
               onClick={() => onSettingChange("colorMode", "color")}
             >
               {t("color")}
@@ -1561,6 +1570,7 @@ function PreferencesPanel({
               type="button"
               className={settings.colorMode === "grayscale" ? "isSelected" : ""}
               aria-pressed={settings.colorMode === "grayscale"}
+              disabled={!canEditSettings}
               onClick={() => onSettingChange("colorMode", "grayscale")}
             >
               {t("grayscale")}
@@ -1574,6 +1584,7 @@ function PreferencesPanel({
             <span>{t("paperSize")}</span>
             <select
               value={settings.paperSize}
+              disabled={!canEditSettings}
               onChange={(event) => onSettingChange("paperSize", event.target.value)}
             >
               <option>A4</option>
@@ -1585,6 +1596,7 @@ function PreferencesPanel({
             <span>{t("orientation")}</span>
             <select
               value={settings.orientation}
+              disabled={!canEditSettings}
               onChange={(event) =>
                 onSettingChange(
                   "orientation",
@@ -1600,6 +1612,7 @@ function PreferencesPanel({
             <span>{t("duplex")}</span>
             <select
               value={settings.duplex}
+              disabled={!canEditSettings}
               onChange={(event) =>
                 onSettingChange(
                   "duplex",
@@ -1616,6 +1629,7 @@ function PreferencesPanel({
             <input
               type="checkbox"
               checked={settings.fitToPage}
+              disabled={!canEditSettings}
               onChange={(event) => onSettingChange("fitToPage", event.target.checked)}
             />
             <span>{t("fitToPage")}</span>
@@ -1628,6 +1642,7 @@ function PreferencesPanel({
             <span>{t("outputQuality")}</span>
             <select
               value={settings.quality}
+              disabled={!canEditSettings}
               onChange={(event) =>
                 onSettingChange("quality", event.target.value as PrintSettings["quality"])
               }
