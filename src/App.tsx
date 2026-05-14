@@ -1492,7 +1492,7 @@ function App() {
           ...chat.actions,
           makeAction("error", "Print failed", getErrorMessage(error)),
         ],
-        status: "error",
+        status: "ready",
         updatedAt: new Date().toISOString(),
       }));
     } finally {
