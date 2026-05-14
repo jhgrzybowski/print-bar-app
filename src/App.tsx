@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   Ban,
   Check,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Eye,
   FileSearch,
@@ -78,13 +81,20 @@ const languageStorageKey = "print-bar-language";
 const previewSizeStorageKey = "print-bar-preview-size";
 const MAX_COPIES = 99;
 const MIN_COPIES = 1;
+const MAX_MATERIALIZED_PAGE_RANGE = 5000;
 
 type PreviewSize = "compact" | "large";
 
 type ParsedPreviewPageRange =
   | { kind: "all"; label: string; pages: number[] }
   | { kind: "valid"; label: string; pages: number[] }
-  | { kind: "invalid"; label: string; message: string; pages: [] };
+  | {
+      kind: "invalid";
+      label: string;
+      messageKey: TranslationKey;
+      messageValues?: TranslationValues;
+      pages: [];
+    };
 
 type CountTranslationKeySet = Partial<
   Record<Intl.LDMLPluralRule, TranslationKey>
@@ -232,7 +242,7 @@ const isEditableChat = (chat: PrintChat): boolean =>
   chat.status === "draft" || chat.status === "ready";
 
 const makePageSequence = (pageCount?: number) =>
-  pageCount && pageCount > 0
+  pageCount && pageCount > 0 && pageCount <= MAX_MATERIALIZED_PAGE_RANGE
     ? Array.from({ length: pageCount }, (_, index) => index + 1)
     : [];
 
@@ -260,7 +270,7 @@ const parsePreviewPageRange = (
       return {
         kind: "invalid",
         label: pageRange,
-        message: "Use pages like 1, 3-5, 8.",
+        messageKey: "pageRange.invalidFormat",
         pages: [],
       };
     }
@@ -272,7 +282,7 @@ const parsePreviewPageRange = (
       return {
         kind: "invalid",
         label: pageRange,
-        message: "Page ranges must move from lower to higher page numbers.",
+        messageKey: "pageRange.mustAscend",
         pages: [],
       };
     }
@@ -281,13 +291,28 @@ const parsePreviewPageRange = (
       return {
         kind: "invalid",
         label: pageRange,
-        message: `This file has ${pageCount} page${pageCount === 1 ? "" : "s"}.`,
+        messageKey: "pageRange.exceedsPageCount",
+        messageValues: { count: pageCount },
         pages: [],
       };
     }
 
+    if (!pageCount && end - start + 1 > MAX_MATERIALIZED_PAGE_RANGE) {
+      continue;
+    }
+
     for (let page = start; page <= end; page += 1) {
       pages.add(page);
+
+      if (pages.size > MAX_MATERIALIZED_PAGE_RANGE) {
+        return {
+          kind: "invalid",
+          label: pageRange,
+          messageKey: "pageRange.tooLarge",
+          messageValues: { count: MAX_MATERIALIZED_PAGE_RANGE },
+          pages: [],
+        };
+      }
     }
   }
 
@@ -492,6 +517,25 @@ const formatMimeType = (mimeType: string, t: Translator) => {
 const formatPageRange = (pageRange: PrintSettings["pageRange"], t: Translator) =>
   pageRange === "all" ? t("allPages") : pageRange;
 
+const formatToggleValue = (value: boolean, t: Translator) =>
+  value ? t("toggle.on") : t("toggle.off");
+
+const formatQuality = (value: PrintSettings["quality"], t: Translator) => {
+  if (value === "draft") return t("option.draft");
+  if (value === "normal") return t("option.normal");
+  return t("option.high");
+};
+
+const hasDebugErrorText = (value: string) =>
+  /cannot read properties|reading 'length'|typeerror|undefined|null/i.test(value);
+
+const formatSafeNotice = (message: string, fallback: string) =>
+  message.trim() &&
+  !hasDebugErrorText(message) &&
+  !/safe defaults until/i.test(message)
+    ? message
+    : fallback;
+
 const formatPageRangeInput = (
   pageRange: PrintSettings["pageRange"],
 ) => (pageRange === "all" ? "" : pageRange);
@@ -660,15 +704,14 @@ const getSettingChangeDescription = (
   }
 
   if (key === "quality") {
-    // Quality values don't have translation keys, display as-is
     return {
       title: baseTitle,
-      description: `${t("quality")}: ${String(value).charAt(0).toUpperCase() + String(value).slice(1)}`,
+      description: `${t("quality")}: ${formatQuality(value as PrintSettings["quality"], t)}`,
     };
   }
 
   if (key === "fitToPage") {
-    const displayValue = value ? "On" : "Off";
+    const displayValue = formatToggleValue(Boolean(value), t);
     return {
       title: baseTitle,
       description: `${t("fitToPage")}: ${displayValue}`,
@@ -678,7 +721,7 @@ const getSettingChangeDescription = (
   if (key === "collate") {
     return {
       title: baseTitle,
-      description: `${t("collate")}: ${value ? "On" : "Off"}`,
+      description: `${t("collate")}: ${formatToggleValue(Boolean(value), t)}`,
     };
   }
 
@@ -769,6 +812,16 @@ const fallbackCapability = (
   supported: true,
 });
 
+const unsupportedCapability = (
+  notes = "This printer did not report support for this setting.",
+): PrinterOptionCapability => ({
+  choices: [],
+  mapping: {},
+  notes,
+  recommendedMapping: {},
+  supported: false,
+});
+
 const fallbackCapabilities: PrinterCapabilities = {
   collate: fallbackCapability(["true", "false"]),
   colorModes: fallbackCapability(["color", "monochrome"]),
@@ -781,18 +834,25 @@ const fallbackCapabilities: PrinterCapabilities = {
 };
 
 const mapOptionBlock = (
-  block: OptionBlockDto,
+  block: OptionBlockDto | undefined,
   fallbackChoices: string[],
 ): PrinterOptionCapability => ({
-  choices: block.choices.length > 0 ? block.choices : fallbackChoices,
-  mapping: block.mapping ?? {},
-  notes: block.notes,
-  recommendedMapping: block.recommended_mapping ?? {},
-  supported: block.supported,
+  choices:
+    Array.isArray(block?.choices) && block.choices.length > 0
+      ? block.choices
+      : block?.supported === false
+        ? []
+        : fallbackChoices,
+  mapping: block?.mapping ?? {},
+  notes: block?.notes,
+  recommendedMapping: block?.recommended_mapping ?? {},
+  supported: block?.supported ?? Boolean(block),
 });
 
 const mapCapabilities = (options: PrinterOptionsResponseDto): PrinterCapabilities => ({
-  collate: mapOptionBlock(options.collate, ["true", "false"]),
+  collate: options.collate
+    ? mapOptionBlock(options.collate, ["true", "false"])
+    : unsupportedCapability("Collate support was not reported by this printer."),
   colorModes: mapOptionBlock(options.color_modes, ["color", "monochrome"]),
   duplexModes: mapOptionBlock(options.duplex_modes, [
     "none",
@@ -886,13 +946,27 @@ const mapSettingsToPrintRequest = (
   },
 });
 
+const getCapabilityChoices = (capability: PrinterOptionCapability): string[] =>
+  Array.isArray(capability.choices)
+    ? capability.choices.filter((choice) => typeof choice === "string")
+    : [];
+
+const isCapabilitySupported = (capability: PrinterOptionCapability): boolean =>
+  capability.supported === true;
+
+const getCapabilityHint = (
+  capability: PrinterOptionCapability,
+  fallbackKey: TranslationKey,
+  t: Translator,
+) => formatSafeNotice(capability.notes ?? "", t(fallbackKey));
+
 const isSupportedChoice = (
   capability: PrinterOptionCapability,
   value: string,
 ) =>
-  !capability.supported ||
-  capability.choices.length === 0 ||
-  capability.choices.includes(value);
+  !isCapabilitySupported(capability) ||
+  getCapabilityChoices(capability).length === 0 ||
+  getCapabilityChoices(capability).includes(value);
 
 const getUnsupportedSelectedSettings = (
   settings: PrintSettings,
@@ -930,22 +1004,15 @@ const getUnsupportedSelectedSettings = (
   }
 
   if (!isSupportedChoice(capabilities.quality, settings.quality)) {
-    const qualityLabel =
-      settings.quality === "draft"
-        ? t("option.draft")
-        : settings.quality === "normal"
-          ? t("option.normal")
-          : t("option.high");
-
-    unsupportedSelections.push(`${t("quality")}: ${qualityLabel}`);
+    unsupportedSelections.push(`${t("quality")}: ${formatQuality(settings.quality, t)}`);
   }
 
   if (!isSupportedChoice(capabilities.fitToPage, String(settings.fitToPage))) {
-    unsupportedSelections.push(`${t("fitToPage")}: ${settings.fitToPage ? "On" : "Off"}`);
+    unsupportedSelections.push(`${t("fitToPage")}: ${formatToggleValue(settings.fitToPage, t)}`);
   }
 
   if (!isSupportedChoice(capabilities.collate, String(settings.collate ?? true))) {
-    unsupportedSelections.push(`${t("collate")}: ${(settings.collate ?? true) ? "On" : "Off"}`);
+    unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(settings.collate ?? true, t)}`);
   }
 
   if (!isSupportedChoice(capabilities.mediaTypes, settings.mediaType ?? "plain")) {
@@ -991,6 +1058,8 @@ function App() {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archivedChatIds, setArchivedChatIds] = useState<string[]>([]);
   const [backendConnection, setBackendConnection] =
     useState<BackendConnectionState>({
       baseUrl: api.baseUrl,
@@ -1020,6 +1089,10 @@ function App() {
     () =>
       printChats.find((chat) => chat.id === selectedChatId) ?? printChats[0],
     [printChats, selectedChatId],
+  );
+  const archivedChatIdSet = useMemo(
+    () => new Set(archivedChatIds),
+    [archivedChatIds],
   );
 
   const themeStyle = {
@@ -1299,8 +1372,19 @@ function App() {
     const draftChat = createDraftChat(t);
 
     setPrintChats((currentChats) => [draftChat, ...currentChats]);
+    setArchivedChatIds((currentIds) => currentIds.filter((id) => id !== draftChat.id));
     setSelectedChatId(draftChat.id);
     setLeftOpen(false);
+  };
+
+  const handleArchivePrintFlow = (chatId: string) => {
+    setArchivedChatIds((currentIds) =>
+      currentIds.includes(chatId) ? currentIds : [...currentIds, chatId],
+    );
+  };
+
+  const handleRestorePrintFlow = (chatId: string) => {
+    setArchivedChatIds((currentIds) => currentIds.filter((id) => id !== chatId));
   };
 
   const handleRenamePrintFlow = (chatId: string, nextTitle: string) => {
@@ -1702,6 +1786,8 @@ function App() {
       <div className="appShell">
         <PrinterSidebar
           backend={backendConnection}
+          archivedChatIds={archivedChatIdSet}
+          archiveOpen={archiveOpen}
           chats={printChats}
           details={printerDetails}
           selectedChatId={selectedChat.id}
@@ -1713,6 +1799,7 @@ function App() {
           isOpen={leftOpen}
           isSettingsOpen={profileSettingsOpen}
           onClose={() => setLeftOpen(false)}
+          onArchivePrintFlow={handleArchivePrintFlow}
           onSelectChat={(chatId) => {
             setSelectedChatId(chatId);
             setLeftOpen(false);
@@ -1720,9 +1807,11 @@ function App() {
           onSelectProfile={handleSelectProfile}
           onSelectLanguage={setLanguage}
           onToggleSettings={() => setProfileSettingsOpen((current) => !current)}
+          onToggleArchive={() => setArchiveOpen((current) => !current)}
           onCloseSettings={() => setProfileSettingsOpen(false)}
           onCreatePrintFlow={handleCreatePrintFlow}
           onRefresh={refreshBackendState}
+          onRestorePrintFlow={handleRestorePrintFlow}
         />
         <MainWorkspace
           chat={selectedChat}
@@ -1776,6 +1865,8 @@ function App() {
 }
 
 type PrinterSidebarProps = {
+  archivedChatIds: Set<string>;
+  archiveOpen: boolean;
   backend: BackendConnectionState;
   chats: PrintChat[];
   details: PrinterStatusDetails;
@@ -1787,17 +1878,22 @@ type PrinterSidebarProps = {
   t: Translator;
   isOpen: boolean;
   isSettingsOpen: boolean;
+  onArchivePrintFlow: (chatId: string) => void;
   onClose: () => void;
   onSelectChat: (chatId: string) => void;
   onSelectLanguage: (language: LanguageCode) => void;
   onSelectProfile: (profileId: string) => void;
   onToggleSettings: () => void;
+  onToggleArchive: () => void;
   onCloseSettings: () => void;
   onCreatePrintFlow: () => void;
   onRefresh: () => void;
+  onRestorePrintFlow: (chatId: string) => void;
 };
 
 function PrinterSidebar({
+  archivedChatIds,
+  archiveOpen,
   backend,
   chats,
   details,
@@ -1809,23 +1905,28 @@ function PrinterSidebar({
   t,
   isOpen,
   isSettingsOpen,
+  onArchivePrintFlow,
   onClose,
   onSelectChat,
   onSelectLanguage,
   onSelectProfile,
   onToggleSettings,
+  onToggleArchive,
   onCloseSettings,
   onCreatePrintFlow,
   onRefresh,
+  onRestorePrintFlow,
 }: PrinterSidebarProps) {
   const queuedCount = chats.filter((chat) => chat.status === "queued").length;
   const selectedLanguage = getLanguage(language);
   const queueName = details.queueName ?? "Canon MG5350";
+  const latestChats = chats.filter((chat) => !archivedChatIds.has(chat.id));
+  const archivedChats = chats.filter((chat) => archivedChatIds.has(chat.id));
 
   return (
     <aside className={`printerSidebar ${isOpen ? "isOpen" : ""}`}>
       <div className="mobilePanelHeader">
-        <button className="iconButton" type="button" onClick={onClose} aria-label={t("closePrintFlows")}>
+        <button className="iconButton sidebarIconButton" type="button" onClick={onClose} aria-label={t("closePrintFlows")}>
           <X size={17} />
         </button>
       </div>
@@ -1841,7 +1942,7 @@ function PrinterSidebar({
           </div>
         </div>
         <button
-          className="iconButton sidebarRefreshButton"
+          className="iconButton sidebarIconButton sidebarRefreshButton"
           type="button"
           onClick={onRefresh}
           aria-label={t("refreshStatus")}
@@ -1884,7 +1985,7 @@ function PrinterSidebar({
         <div className="flowListHeader">
           <h2>{t("latestPrints")}</h2>
           <button
-            className="iconButton sidebarAddButton"
+            className="iconButton sidebarIconButton sidebarAddButton"
             type="button"
             onClick={onCreatePrintFlow}
             aria-label={t("newPrintFlowAction")}
@@ -1892,26 +1993,82 @@ function PrinterSidebar({
             <Plus size={15} />
           </button>
         </div>
-        {chats.map((chat) => (
-          <button
-            className={`flowItem ${chat.id === selectedChatId ? "isActive" : ""}`}
-            type="button"
+        {latestChats.map((chat) => (
+          <div
+            className={`flowRow ${chat.id === selectedChatId ? "isActive" : ""}`}
             key={chat.id}
-            onClick={() => onSelectChat(chat.id)}
-            title={chat.title}
           >
-            <span className="flowTopline">
-              <span className="flowName">{chat.title}</span>
-              <span className={`flowState flowState-${chat.status}`}>
-                {getFlowStatusLabel(chat.status, t)}
+            <button
+              className="flowItem"
+              type="button"
+              onClick={() => onSelectChat(chat.id)}
+              title={chat.title}
+            >
+              <span className="flowTopline">
+                <span className="flowName">{chat.title}</span>
+                <span className={`flowState flowState-${chat.status}`}>
+                  {getFlowStatusLabel(chat.status, t)}
+                </span>
               </span>
-            </span>
-            <span className="flowMeta">{getFlowMeta(chat, language, t)}</span>
-          </button>
+              <span className="flowMeta">{getFlowMeta(chat, language, t)}</span>
+            </button>
+            <button
+              className="iconButton sidebarIconButton flowArchiveButton"
+              type="button"
+              onClick={() => onArchivePrintFlow(chat.id)}
+              aria-label={t("archivePrint", { title: chat.title })}
+              title={t("archivePrint", { title: chat.title })}
+            >
+              <Archive size={14} />
+            </button>
+          </div>
         ))}
       </nav>
 
       <div className="profileArea">
+        {archivedChats.length > 0 ? (
+          <section className="archiveSection" aria-label={t("archivedPrints")}>
+            <button
+              className="archiveToggle"
+              type="button"
+              onClick={onToggleArchive}
+              aria-expanded={archiveOpen}
+            >
+              <span>{t("archiveCount", { count: archivedChats.length })}</span>
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            {archiveOpen ? (
+              <div className="archiveList">
+                {archivedChats.map((chat) => (
+                  <div
+                    className={`archiveRow ${chat.id === selectedChatId ? "isActive" : ""}`}
+                    key={chat.id}
+                  >
+                    <button
+                      className="archiveItem"
+                      type="button"
+                      onClick={() => onSelectChat(chat.id)}
+                      title={chat.title}
+                    >
+                      <span>{chat.title}</span>
+                      <span className="archiveItemStatus">{getFlowStatusLabel(chat.status, t)}</span>
+                    </button>
+                    <button
+                      className="iconButton sidebarIconButton archiveRestoreButton"
+                      type="button"
+                      onClick={() => onRestorePrintFlow(chat.id)}
+                      aria-label={t("restorePrint", { title: chat.title })}
+                      title={t("restorePrint", { title: chat.title })}
+                    >
+                      <ArchiveRestore size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         {isSettingsOpen ? (
           <div className="profileSettingsPanel" role="dialog" aria-label={t("appSettings")}>
             <div className="profileSettingsHeader">
@@ -1920,7 +2077,7 @@ function PrinterSidebar({
                 <p>{t("languageHelp")}</p>
               </div>
               <button
-                className="iconButton"
+                className="iconButton sidebarIconButton"
                 type="button"
                 onClick={onCloseSettings}
                 aria-label={t("closeSettings")}
@@ -2292,8 +2449,10 @@ function FilePreview({
   });
   const currentPage = preview?.currentPage ?? 1;
   const availablePages = preview?.pages ?? [];
+  const hasMaterializedRange =
+    parsedPageRange.kind === "valid" && parsedPageRange.pages.length > 0;
   const filteredPages =
-    parsedPageRange.kind === "valid"
+    hasMaterializedRange
       ? availablePages.filter((page) => parsedPageRange.pages.includes(page.page))
       : availablePages;
   const navigationPages =
@@ -2311,10 +2470,10 @@ function FilePreview({
     availablePages.find((page) => page.page === activePage)?.url ??
     file.previewUrl;
   const selectedPreviewCount =
-    parsedPageRange.kind === "valid"
+    hasMaterializedRange
       ? parsedPageRange.pages.length
       : pageCount ?? availablePages.length;
-  const hasFilteredRange = parsedPageRange.kind === "valid";
+  const hasFilteredRange = hasMaterializedRange;
 
   useEffect(() => {
     if (
@@ -2361,7 +2520,8 @@ function FilePreview({
 
       {parsedPageRange.kind === "invalid" ? (
         <p className="previewRangeNote previewRangeNote-error">
-          {t("previewRangeInvalid")} {parsedPageRange.message}
+          {t("previewRangeInvalid")}{" "}
+          {t(parsedPageRange.messageKey, parsedPageRange.messageValues)}
         </p>
       ) : hasFilteredRange ? (
         <p className="previewRangeNote">{t("previewingSelectedPages")}</p>
@@ -2739,46 +2899,52 @@ function PreferencesPanel({
   onPrint,
 }: PreferencesPanelProps) {
   const settings = chat.settings;
-  const canEditPaper = canEditSettings && capabilities.paperSizes.supported;
-  const canEditOrientation = canEditSettings && capabilities.orientation.supported;
-  const canEditDuplex = canEditSettings && capabilities.duplexModes.supported;
-  const canEditQuality = canEditSettings && capabilities.quality.supported;
-  const canEditColor = canEditSettings && capabilities.colorModes.supported;
-  const canEditFit = canEditSettings && capabilities.fitToPage.supported;
-  const canEditCollate = canEditSettings && capabilities.collate.supported;
-  const canEditMedia = canEditSettings && capabilities.mediaTypes.supported;
+  const paperCapabilityChoices = getCapabilityChoices(capabilities.paperSizes);
+  const orientationCapabilityChoices = getCapabilityChoices(capabilities.orientation);
+  const duplexCapabilityChoices = getCapabilityChoices(capabilities.duplexModes);
+  const qualityCapabilityChoices = getCapabilityChoices(capabilities.quality);
+  const colorCapabilityChoices = getCapabilityChoices(capabilities.colorModes);
+  const mediaCapabilityChoices = getCapabilityChoices(capabilities.mediaTypes);
+  const canEditPaper = canEditSettings && isCapabilitySupported(capabilities.paperSizes);
+  const canEditOrientation = canEditSettings && isCapabilitySupported(capabilities.orientation);
+  const canEditDuplex = canEditSettings && isCapabilitySupported(capabilities.duplexModes);
+  const canEditQuality = canEditSettings && isCapabilitySupported(capabilities.quality);
+  const canEditColor = canEditSettings && isCapabilitySupported(capabilities.colorModes);
+  const canEditFit = canEditSettings && isCapabilitySupported(capabilities.fitToPage);
+  const canEditCollate = canEditSettings && isCapabilitySupported(capabilities.collate);
+  const canEditMedia = canEditSettings && isCapabilitySupported(capabilities.mediaTypes);
   const paperChoices = Array.from(
-    new Set([settings.paperSize, ...capabilities.paperSizes.choices]),
+    new Set([settings.paperSize, ...paperCapabilityChoices]),
   ).filter(Boolean);
   const orientationChoices = Array.from(
-    new Set([settings.orientation, ...capabilities.orientation.choices]),
+    new Set([settings.orientation, ...orientationCapabilityChoices]),
   ).filter(
     (choice): choice is PrintSettings["orientation"] =>
       choice === "portrait" || choice === "landscape",
   );
   const duplexChoices = Array.from(
-    new Set([settings.duplex, ...capabilities.duplexModes.choices]),
+    new Set([settings.duplex, ...duplexCapabilityChoices]),
   ).filter(
     (choice): choice is PrintSettings["duplex"] =>
       choice === "none" || choice === "long-edge" || choice === "short-edge",
   );
   const qualityChoices = Array.from(
-    new Set([settings.quality, ...capabilities.quality.choices]),
+    new Set([settings.quality, ...qualityCapabilityChoices]),
   ).filter(
     (choice): choice is PrintSettings["quality"] =>
       choice === "draft" || choice === "normal" || choice === "high",
   );
   const mediaChoices = Array.from(
-    new Set([settings.mediaType ?? "plain", ...capabilities.mediaTypes.choices]),
+    new Set([settings.mediaType ?? "plain", ...mediaCapabilityChoices]),
   ).filter(Boolean);
   const canUseColor =
     canEditColor &&
-    (capabilities.colorModes.choices.length === 0 ||
-      capabilities.colorModes.choices.includes("color"));
+    (colorCapabilityChoices.length === 0 ||
+      colorCapabilityChoices.includes("color"));
   const canUseGrayscale =
     canEditColor &&
-    (capabilities.colorModes.choices.length === 0 ||
-      capabilities.colorModes.choices.includes("monochrome"));
+    (colorCapabilityChoices.length === 0 ||
+      colorCapabilityChoices.includes("monochrome"));
 
   return (
     <aside className={`preferencesPanel ${isOpen ? "isOpen" : ""}`}>
@@ -2862,8 +3028,8 @@ function PreferencesPanel({
               {t("grayscale")}
             </button>
           </div>
-          {!capabilities.colorModes.supported ? (
-            <p className="settingHint">{capabilities.colorModes.notes ?? t("unsupportedOption")}</p>
+          {!isCapabilitySupported(capabilities.colorModes) ? (
+            <p className="settingHint">{getCapabilityHint(capabilities.colorModes, "unsupportedOption", t)}</p>
           ) : null}
         </section>
 
@@ -2934,7 +3100,7 @@ function PreferencesPanel({
             />
             <span>{t("fitToPage")}</span>
           </label>
-          {[capabilities.paperSizes, capabilities.orientation, capabilities.duplexModes, capabilities.fitToPage].some((capability) => !capability.supported) ? (
+          {[capabilities.paperSizes, capabilities.orientation, capabilities.duplexModes, capabilities.fitToPage].some((capability) => !isCapabilitySupported(capability)) ? (
             <p className="settingHint">{t("unsupportedOption")}</p>
           ) : null}
         </section>
@@ -2961,8 +3127,8 @@ function PreferencesPanel({
               ))}
             </select>
           </label>
-          {!capabilities.quality.supported ? (
-            <p className="settingHint">{capabilities.quality.notes ?? t("unsupportedOption")}</p>
+          {!isCapabilitySupported(capabilities.quality) ? (
+            <p className="settingHint">{getCapabilityHint(capabilities.quality, "unsupportedOption", t)}</p>
           ) : null}
         </section>
 
@@ -3004,7 +3170,14 @@ function PreferencesPanel({
             />
             <span>{t("collate")}</span>
           </label>
-          {optionsError ? <p className="settingHint">{optionsError}</p> : null}
+          {!isCapabilitySupported(capabilities.collate) ? (
+            <p className="settingHint">{getCapabilityHint(capabilities.collate, "unsupported.collate", t)}</p>
+          ) : null}
+          {optionsError ? (
+            <p className="settingHint">
+              {formatSafeNotice(optionsError, t("optionsFallback"))}
+            </p>
+          ) : null}
           {unsupportedSelectedSettings.length > 0 ? (
             <p className="settingHint">
               {t("unsupportedSelectedSettings", {

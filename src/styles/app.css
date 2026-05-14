@@ -68,19 +68,38 @@
   align-items: center;
 }
 
-.sidebarRefreshButton {
-  width: 34px;
-  height: 34px;
+.printerSidebar .sidebarIconButton,
+.profileSettingsButton {
   color: var(--text-inverse-muted);
   background: var(--sidebar-bg-strong);
-  border-color: var(--sidebar-hover-border);
+  border: 1px solid var(--sidebar-hover-border);
+  border-radius: var(--radius-control);
   box-shadow:
     5px 6px 12px oklch(0.12 0.026 276 / 0.22),
     -3px -3px 8px oklch(0.48 0.016 276 / 0.08);
 }
 
-.sidebarRefreshButton:disabled,
-.sidebarAddButton:disabled,
+.printerSidebar .sidebarIconButton:hover,
+.profileSettingsButton:hover,
+.profileSettingsButton[aria-expanded="true"] {
+  color: var(--text-inverse);
+  background: var(--sidebar-active);
+  border-color: color-mix(in oklch, var(--accent) 32%, var(--sidebar-hover-border));
+  box-shadow:
+    5px 6px 12px oklch(0.1 0.026 276 / 0.24),
+    -3px -3px 8px oklch(0.48 0.016 276 / 0.08),
+    inset 0 1px 0 var(--sidebar-active-highlight);
+}
+
+.printerSidebar .sidebarIconButton:active,
+.profileSettingsButton:active,
+.profileSettingsButton[aria-expanded="true"] {
+  box-shadow:
+    inset 4px 4px 9px oklch(0.12 0.026 276 / 0.24),
+    inset -3px -3px 8px oklch(0.52 0.014 276 / 0.1);
+}
+
+.printerSidebar .sidebarIconButton:disabled,
 .profileSettingsButton:disabled {
   color: var(--text-inverse-muted);
   background: var(--sidebar-bg-strong);
@@ -89,6 +108,11 @@
     inset 4px 4px 8px oklch(0.08 0.026 276 / 0.28),
     inset -3px -3px 7px oklch(0.52 0.014 276 / 0.08);
   opacity: 0.7;
+}
+
+.sidebarRefreshButton {
+  width: 34px;
+  height: 34px;
 }
 
 .printerIcon {
@@ -289,6 +313,13 @@
   border-color: color-mix(in oklch, var(--accent) 32%, var(--sidebar-hover-border));
 }
 
+.flowRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: stretch;
+}
+
 .flowItem {
   width: 100%;
   padding: 11px 10px;
@@ -305,7 +336,8 @@
     transform 160ms var(--ease-out-soft);
 }
 
-.flowItem:hover {
+.flowRow:hover .flowItem,
+.flowItem:focus-visible {
   background: var(--sidebar-hover-bg);
   border-color: var(--sidebar-hover-border);
   box-shadow:
@@ -313,7 +345,7 @@
     -3px -3px 8px oklch(0.48 0.016 276 / 0.08);
 }
 
-.flowItem.isActive {
+.flowRow.isActive .flowItem {
   background: var(--sidebar-active);
   border-color: color-mix(in oklch, var(--accent) 36%, var(--sidebar-border));
   box-shadow:
@@ -324,6 +356,23 @@
 
 .flowItem:active {
   transform: translateY(1px);
+}
+
+.flowArchiveButton {
+  width: 30px;
+  height: auto;
+  min-height: 30px;
+  align-self: stretch;
+  opacity: 0;
+}
+
+.flowRow:hover .flowArchiveButton,
+.flowArchiveButton:focus-visible {
+  opacity: 1;
+}
+
+.flowRow.isActive .flowArchiveButton {
+  opacity: 0.82;
 }
 
 .flowTopline {
@@ -374,6 +423,104 @@
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.archiveSection {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.archiveToggle {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px 0 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-inverse-muted);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  font-weight: 650;
+  transition:
+    background-color 180ms var(--ease-out-soft),
+    border-color 180ms var(--ease-out-soft),
+    color 180ms var(--ease-out-soft);
+}
+
+.archiveToggle:hover,
+.archiveToggle[aria-expanded="true"] {
+  color: var(--text-inverse);
+  background: var(--sidebar-hover-bg);
+  border-color: var(--sidebar-hover-border);
+}
+
+.archiveToggle svg {
+  flex: 0 0 auto;
+  transition: transform 180ms var(--ease-out-soft);
+}
+
+.archiveToggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.archiveList {
+  display: grid;
+  gap: 5px;
+}
+
+.archiveRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.archiveItem {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  gap: 2px;
+  color: var(--text-inverse-muted);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.archiveItem:hover,
+.archiveRow.isActive .archiveItem {
+  color: var(--text-inverse);
+  background: var(--sidebar-active);
+  border-color: color-mix(in oklch, var(--accent) 26%, var(--sidebar-hover-border));
+  box-shadow:
+    inset 3px 3px 7px oklch(0.12 0.026 276 / 0.18),
+    inset -2px -2px 6px oklch(0.52 0.014 276 / 0.08);
+}
+
+.archiveItem span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archiveItem .archiveItemStatus {
+  color: var(--text-inverse-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.archiveRestoreButton {
+  width: 30px;
+  height: 30px;
 }
 
 .profileArea {
