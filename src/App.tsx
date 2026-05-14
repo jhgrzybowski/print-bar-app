@@ -722,7 +722,11 @@ const mapBackendStatus = (status?: PrinterStatusDto): PrinterStatus => {
     return "error";
   }
 
-  if (status.accepting_jobs === false || status.reasons.length > 0) {
+  const blockingReasons = status.reasons.filter(
+    (reason) => reason.trim().toLowerCase() !== "none",
+  );
+
+  if (status.accepting_jobs === false || blockingReasons.length > 0) {
     return "warning";
   }
 
