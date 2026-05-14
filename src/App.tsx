@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import {
   AlertTriangle,
-  Archive,
   ArchiveRestore,
   Ban,
   Check,
@@ -2019,7 +2018,7 @@ function PrinterSidebar({
               aria-label={t("archivePrint", { title: chat.title })}
               title={t("archivePrint", { title: chat.title })}
             >
-              <Archive size={14} />
+              <X size={13} />
             </button>
           </div>
         ))}
