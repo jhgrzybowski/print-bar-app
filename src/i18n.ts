@@ -89,6 +89,7 @@ const en = {
   "disabled.invalidPageRange": "Use pages like 1, 3-5, 8",
   "disabled.noFile": "Select a file to print",
   "disabled.printerNotReady": "Printer is not ready",
+  "disabled.unsupportedSettings": "Adjust unsupported settings",
   "duplex": "Duplex",
   "duplex.longEdge": "Long edge",
   "duplex.none": "None",
@@ -221,6 +222,8 @@ const en = {
   "unknownPages": "Unknown pages",
   "unreachable": "Unreachable",
   "unsupportedOption": "This printer does not report support for this setting.",
+  "unsupportedSelectedSettings":
+    "Adjust unsupported selections before printing: {settings}.",
   "waitingForUpload": "Waiting for upload",
 } as const;
 
@@ -297,6 +300,7 @@ const pl: Record<keyof typeof en, string> = {
   "disabled.invalidPageRange": "Użyj np. 1, 3-5, 8",
   "disabled.noFile": "Wybierz plik do druku",
   "disabled.printerNotReady": "Drukarka nie jest gotowa",
+  "disabled.unsupportedSettings": "Dostosuj nieobsługiwane ustawienia",
   "duplex": "Druk dwustronny",
   "duplex.longEdge": "Długa krawędź",
   "duplex.none": "Brak",
@@ -430,6 +434,8 @@ const pl: Record<keyof typeof en, string> = {
   "unknownPages": "Nieznana liczba stron",
   "unreachable": "Niedostępny",
   "unsupportedOption": "Ta drukarka nie zgłasza obsługi tego ustawienia.",
+  "unsupportedSelectedSettings":
+    "Dostosuj nieobsługiwane wybory przed drukiem: {settings}.",
   "waitingForUpload": "Oczekiwanie na plik",
 };
 

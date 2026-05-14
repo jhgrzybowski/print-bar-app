@@ -604,6 +604,7 @@ const getDisabledReason = (
   chat: PrintChat,
   status: PrinterStatus,
   backendReachable: boolean,
+  unsupportedSelectedSettings: string[],
   t: Translator,
 ) => {
   if (!chat.file) {
@@ -624,6 +625,10 @@ const getDisabledReason = (
 
   if (!isValidPageRange(chat.settings.pageRange)) {
     return t("disabled.invalidPageRange");
+  }
+
+  if (unsupportedSelectedSettings.length > 0) {
+    return t("disabled.unsupportedSettings");
   }
 
   return "";
@@ -779,6 +784,75 @@ const mapSettingsToPrintRequest = (
   },
 });
 
+const isSupportedChoice = (
+  capability: PrinterOptionCapability,
+  value: string,
+) =>
+  !capability.supported ||
+  capability.choices.length === 0 ||
+  capability.choices.includes(value);
+
+const getUnsupportedSelectedSettings = (
+  settings: PrintSettings,
+  capabilities: PrinterCapabilities,
+  t: Translator,
+) => {
+  const unsupportedSelections: string[] = [];
+  const colorMode = settings.colorMode === "grayscale" ? "monochrome" : "color";
+
+  if (!isSupportedChoice(capabilities.colorModes, colorMode)) {
+    unsupportedSelections.push(
+      `${t("color")}: ${t(settings.colorMode === "grayscale" ? "colorMode.grayscale" : "colorMode.color")}`,
+    );
+  }
+
+  if (!isSupportedChoice(capabilities.paperSizes, settings.paperSize)) {
+    unsupportedSelections.push(`${t("paperSize")}: ${settings.paperSize}`);
+  }
+
+  if (!isSupportedChoice(capabilities.orientation, settings.orientation)) {
+    unsupportedSelections.push(
+      `${t("orientation")}: ${t(settings.orientation === "portrait" ? "option.portrait" : "option.landscape")}`,
+    );
+  }
+
+  if (!isSupportedChoice(capabilities.duplexModes, settings.duplex)) {
+    const duplexLabel =
+      settings.duplex === "none"
+        ? t("duplex.none")
+        : settings.duplex === "long-edge"
+          ? t("duplex.longEdge")
+          : t("duplex.shortEdge");
+
+    unsupportedSelections.push(`${t("duplex")}: ${duplexLabel}`);
+  }
+
+  if (!isSupportedChoice(capabilities.quality, settings.quality)) {
+    const qualityLabel =
+      settings.quality === "draft"
+        ? t("option.draft")
+        : settings.quality === "normal"
+          ? t("option.normal")
+          : t("option.high");
+
+    unsupportedSelections.push(`${t("quality")}: ${qualityLabel}`);
+  }
+
+  if (!isSupportedChoice(capabilities.fitToPage, String(settings.fitToPage))) {
+    unsupportedSelections.push(`${t("fitToPage")}: ${settings.fitToPage ? "On" : "Off"}`);
+  }
+
+  if (!isSupportedChoice(capabilities.collate, String(settings.collate ?? true))) {
+    unsupportedSelections.push(`${t("collate")}: ${(settings.collate ?? true) ? "On" : "Off"}`);
+  }
+
+  if (!isSupportedChoice(capabilities.mediaTypes, settings.mediaType ?? "plain")) {
+    unsupportedSelections.push(`${t("mediaType")}: ${settings.mediaType ?? "plain"}`);
+  }
+
+  return unsupportedSelections;
+};
+
 const formatAppliedOptions = (response: PrintResponseDto) => {
   const count = Object.keys(response.applied_options).length;
   const unsupported = response.unsupported_options.length;
@@ -863,12 +937,18 @@ function App() {
     "--workspace-header-bg": selectedProfile.workspaceHeaderBgColor,
   } as CSSProperties;
 
+  const unsupportedSelectedSettings = getUnsupportedSelectedSettings(
+    selectedChat.settings,
+    capabilities,
+    t,
+  );
   const canPrint = Boolean(
     selectedChat.file &&
       backendConnection.reachable &&
       printerStatus === "ready" &&
       isEditableChat(selectedChat) &&
       !isPrinting &&
+      unsupportedSelectedSettings.length === 0 &&
       isValidCopies(selectedChat.settings.copies) &&
       isValidPageRange(
         selectedChat.settings.pageRange === "all"
@@ -880,6 +960,7 @@ function App() {
     selectedChat,
     printerStatus,
     backendConnection.reachable,
+    unsupportedSelectedSettings,
     t,
   );
 
@@ -1534,6 +1615,7 @@ function App() {
           t={t}
           canPrint={canPrint}
           disabledReason={disabledReason}
+          unsupportedSelectedSettings={unsupportedSelectedSettings}
           canEditSettings={isEditableChat(selectedChat)}
           isPrinting={isPrinting}
           isOpen={rightOpen}
@@ -2176,6 +2258,7 @@ type PreferencesPanelProps = {
   t: Translator;
   canPrint: boolean;
   disabledReason: string;
+  unsupportedSelectedSettings: string[];
   canEditSettings: boolean;
   isPrinting: boolean;
   isOpen: boolean;
@@ -2208,6 +2291,7 @@ function PreferencesPanel({
   t,
   canPrint,
   disabledReason,
+  unsupportedSelectedSettings,
   canEditSettings,
   isPrinting,
   isOpen,
@@ -2488,6 +2572,13 @@ function PreferencesPanel({
             <span>{t("collate")}</span>
           </label>
           {optionsError ? <p className="settingHint">{optionsError}</p> : null}
+          {unsupportedSelectedSettings.length > 0 ? (
+            <p className="settingHint">
+              {t("unsupportedSelectedSettings", {
+                settings: unsupportedSelectedSettings.join(", "),
+              })}
+            </p>
+          ) : null}
           <div className="printPlan">
             <p>{t("currentPlan")}</p>
             <strong>
