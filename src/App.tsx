@@ -12,7 +12,9 @@ import {
   Languages,
   Menu,
   MessageSquareText,
+  Pencil,
   Paperclip,
+  Plus,
   Printer,
   RefreshCw,
   Save,
@@ -73,8 +75,16 @@ import {
 type SettingsKey = keyof PrintSettings;
 
 const languageStorageKey = "print-bar-language";
+const previewSizeStorageKey = "print-bar-preview-size";
 const MAX_COPIES = 99;
 const MIN_COPIES = 1;
+
+type PreviewSize = "compact" | "large";
+
+type ParsedPreviewPageRange =
+  | { kind: "all"; label: string; pages: number[] }
+  | { kind: "valid"; label: string; pages: number[] }
+  | { kind: "invalid"; label: string; message: string; pages: [] };
 
 type CountTranslationKeySet = Partial<
   Record<Intl.LDMLPluralRule, TranslationKey>
@@ -221,10 +231,77 @@ const isValidCopies = (copies: number): boolean =>
 const isEditableChat = (chat: PrintChat): boolean =>
   chat.status === "draft" || chat.status === "ready";
 
+const makePageSequence = (pageCount?: number) =>
+  pageCount && pageCount > 0
+    ? Array.from({ length: pageCount }, (_, index) => index + 1)
+    : [];
+
+const parsePreviewPageRange = (
+  pageRange: PrintSettings["pageRange"],
+  pageCount?: number,
+): ParsedPreviewPageRange => {
+  const normalized = String(pageRange).trim().replace(/\s+/g, "").toLowerCase();
+
+  if (!normalized || normalized === "all") {
+    return {
+      kind: "all",
+      label: "all",
+      pages: makePageSequence(pageCount),
+    };
+  }
+
+  const pages = new Set<number>();
+  const parts = normalized.split(",");
+
+  for (const part of parts) {
+    const match = part.match(/^(\d+)(?:-(\d+))?$/);
+
+    if (!match) {
+      return {
+        kind: "invalid",
+        label: pageRange,
+        message: "Use pages like 1, 3-5, 8.",
+        pages: [],
+      };
+    }
+
+    const start = Number(match[1]);
+    const end = Number(match[2] ?? match[1]);
+
+    if (start < 1 || end < 1 || start > end) {
+      return {
+        kind: "invalid",
+        label: pageRange,
+        message: "Page ranges must move from lower to higher page numbers.",
+        pages: [],
+      };
+    }
+
+    if (pageCount && end > pageCount) {
+      return {
+        kind: "invalid",
+        label: pageRange,
+        message: `This file has ${pageCount} page${pageCount === 1 ? "" : "s"}.`,
+        pages: [],
+      };
+    }
+
+    for (let page = start; page <= end; page += 1) {
+      pages.add(page);
+    }
+  }
+
+  return {
+    kind: "valid",
+    label: pageRange,
+    pages: Array.from(pages).sort((first, second) => first - second),
+  };
+};
+
 const isValidPageRange = (pageRange: string): boolean => {
   if (pageRange === "all") return true;
-  // Allow formats: "1", "1-5", "1,3,5", "1-5,7,9-10"
-  return /^(\d+(-\d+)?)(,\d+(-\d+)?)*$/.test(pageRange);
+
+  return parsePreviewPageRange(pageRange).kind === "valid";
 };
 
 const sanitizePageRangeInput = (value: string): string =>
@@ -301,6 +378,24 @@ const getInitialLanguage = (): LanguageCode => {
   const browserLanguage = window.navigator.language.split("-")[0];
 
   return isLanguageCode(browserLanguage) ? browserLanguage : "en";
+};
+
+const getInitialPreviewSize = (): PreviewSize => {
+  if (typeof window === "undefined") {
+    return "compact";
+  }
+
+  try {
+    const storedSize = window.localStorage.getItem(previewSizeStorageKey);
+
+    if (storedSize === "compact" || storedSize === "large") {
+      return storedSize;
+    }
+  } catch {
+    // Preview sizing is still usable without persistence.
+  }
+
+  return "compact";
 };
 
 const getStatusLabel = (status: PrinterStatus, t: Translator) =>
@@ -638,19 +733,26 @@ const getLatestGuidance = (chat: PrintChat) =>
   [...chat.actions]
     .reverse()
     .find((action) =>
-      ["assistant_message", "warning", "error"].includes(action.type),
+      [
+        "assistant_message",
+        "print_submitted",
+        "print_cancelled",
+        "warning",
+        "error",
+      ].includes(action.type),
     );
 
-const createDraftChat = (): PrintChat => ({
+const createDraftChat = (t: Translator = createTranslator("en")): PrintChat => ({
   id: generateId(),
-  title: "New print flow",
+  title: t("newPrintFlow"),
   status: "draft",
-  settings: defaultSettings,
+  settings: { ...defaultSettings },
   actions: [
-    makeAction(
+    makeTranslatedAction(
       "assistant_message",
-      "Waiting for a file",
-      "Upload a PDF, image, or text file to start a real print flow.",
+      "newFlow.guidance.title",
+      "newFlow.guidance.description",
+      t,
     ),
   ],
   updatedAt: new Date().toISOString(),
@@ -875,13 +977,16 @@ function App() {
     () => createPrinterApi({ baseUrl: getPrinterApiBaseUrl() }),
     [],
   );
+  const initialLanguage = useMemo(getInitialLanguage, []);
   const [printChats, setPrintChats] = useState<PrintChat[]>(() => [
-    createDraftChat(),
+    createDraftChat(createTranslator(initialLanguage)),
     ...mockPrintChats,
   ]);
   const [selectedChatId, setSelectedChatId] = useState(() => printChats[0].id);
   const [selectedProfileId, setSelectedProfileId] = useState(profiles[0].id);
-  const [language, setLanguage] = useState<LanguageCode>(getInitialLanguage);
+  const [language, setLanguage] = useState<LanguageCode>(initialLanguage);
+  const [previewSize, setPreviewSize] =
+    useState<PreviewSize>(getInitialPreviewSize);
   const [command, setCommand] = useState("");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
@@ -975,6 +1080,14 @@ function App() {
       // Language switching still works when persistence is blocked.
     }
   }, [language]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(previewSizeStorageKey, previewSize);
+    } catch {
+      // Preview sizing remains session-local when persistence is blocked.
+    }
+  }, [previewSize]);
 
   const updateChatById = (
     chatId: string,
@@ -1182,6 +1295,24 @@ function App() {
     }));
   };
 
+  const handleCreatePrintFlow = () => {
+    const draftChat = createDraftChat(t);
+
+    setPrintChats((currentChats) => [draftChat, ...currentChats]);
+    setSelectedChatId(draftChat.id);
+    setLeftOpen(false);
+  };
+
+  const handleRenamePrintFlow = (chatId: string, nextTitle: string) => {
+    const normalizedTitle = nextTitle.trim();
+
+    updateChatById(chatId, (chat) => ({
+      ...chat,
+      title: normalizedTitle || chat.file?.name || t("newPrintFlow"),
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
   const loadPreviewForChat = async (chatId: string, file: UploadedFile) => {
     if (!file.previewAvailable) {
       updateChatById(chatId, (chat) => ({
@@ -1235,6 +1366,12 @@ function App() {
             "Preview generated",
             `${preview.page_count ?? (pages.length || file.pageCount) ?? "Unknown"} page preview ready.`,
           ),
+          makeTranslatedAction(
+            "assistant_message",
+            "previewReadyGuidance.title",
+            "previewReadyGuidance.description",
+            t,
+          ),
         ],
         file: {
           ...file,
@@ -1270,7 +1407,7 @@ function App() {
   };
 
   const handleFileUpload = async (file: File) => {
-    const targetChat = isEditableChat(selectedChat) ? selectedChat : createDraftChat();
+    const targetChat = isEditableChat(selectedChat) ? selectedChat : createDraftChat(t);
     const targetChatId = targetChat.id;
 
     if (targetChat.id !== selectedChat.id) {
@@ -1584,6 +1721,7 @@ function App() {
           onSelectLanguage={setLanguage}
           onToggleSettings={() => setProfileSettingsOpen((current) => !current)}
           onCloseSettings={() => setProfileSettingsOpen(false)}
+          onCreatePrintFlow={handleCreatePrintFlow}
           onRefresh={refreshBackendState}
         />
         <MainWorkspace
@@ -1591,11 +1729,14 @@ function App() {
           command={command}
           isUploading={isUploading}
           language={language}
+          previewSize={previewSize}
           t={t}
           onCommandChange={setCommand}
           onCommandSubmit={handleCommandSubmit}
           onAttach={handleAttach}
           onPreviewPageChange={handlePreviewPageChange}
+          onPreviewSizeChange={setPreviewSize}
+          onRenameFlow={(title) => handleRenamePrintFlow(selectedChat.id, title)}
           onUploadFile={handleFileUpload}
           onOpenFlows={() => setLeftOpen(true)}
           onOpenSettings={() => setRightOpen(true)}
@@ -1652,6 +1793,7 @@ type PrinterSidebarProps = {
   onSelectProfile: (profileId: string) => void;
   onToggleSettings: () => void;
   onCloseSettings: () => void;
+  onCreatePrintFlow: () => void;
   onRefresh: () => void;
 };
 
@@ -1673,6 +1815,7 @@ function PrinterSidebar({
   onSelectProfile,
   onToggleSettings,
   onCloseSettings,
+  onCreatePrintFlow,
   onRefresh,
 }: PrinterSidebarProps) {
   const queuedCount = chats.filter((chat) => chat.status === "queued").length;
@@ -1738,7 +1881,17 @@ function PrinterSidebar({
       ) : null}
 
       <nav className="flowList" aria-label={t("latestPrints")}>
-        <h2>{t("latestPrints")}</h2>
+        <div className="flowListHeader">
+          <h2>{t("latestPrints")}</h2>
+          <button
+            className="iconButton sidebarAddButton"
+            type="button"
+            onClick={onCreatePrintFlow}
+            aria-label={t("newPrintFlowAction")}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
         {chats.map((chat) => (
           <button
             className={`flowItem ${chat.id === selectedChatId ? "isActive" : ""}`}
@@ -1852,11 +2005,14 @@ type MainWorkspaceProps = {
   command: string;
   isUploading: boolean;
   language: LanguageCode;
+  previewSize: PreviewSize;
   t: Translator;
   onCommandChange: (command: string) => void;
   onCommandSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onAttach: () => void;
   onPreviewPageChange: (page: number) => void;
+  onPreviewSizeChange: (size: PreviewSize) => void;
+  onRenameFlow: (title: string) => void;
   onUploadFile: (file: File) => void;
   onOpenFlows: () => void;
   onOpenSettings: () => void;
@@ -1867,11 +2023,14 @@ function MainWorkspace({
   command,
   isUploading,
   language,
+  previewSize,
   t,
   onCommandChange,
   onCommandSubmit,
   onAttach,
   onPreviewPageChange,
+  onPreviewSizeChange,
+  onRenameFlow,
   onUploadFile,
   onOpenFlows,
   onOpenSettings,
@@ -1904,7 +2063,12 @@ function MainWorkspace({
 
       <header className="workspaceHeader">
         <div className="workspaceTitle">
-          <h1>{chat.title}</h1>
+          <FlowRenameControl
+            defaultTitle={chat.file?.name ?? t("newPrintFlow")}
+            title={chat.title}
+            t={t}
+            onRename={onRenameFlow}
+          />
           <p>
             {chat.file
               ? `${formatMimeType(chat.file.mimeType, t)} / ${
@@ -1931,8 +2095,10 @@ function MainWorkspace({
           <FilePreview
             chat={chat}
             language={language}
+            previewSize={previewSize}
             t={t}
             onPreviewPageChange={onPreviewPageChange}
+            onPreviewSizeChange={onPreviewSizeChange}
           />
         ) : (
           <>
@@ -1990,15 +2156,110 @@ function MainWorkspace({
   );
 }
 
+const getPaperAspectRatio = (
+  paperSize: PrintSettings["paperSize"],
+  orientation: PrintSettings["orientation"],
+) => {
+  const normalizedSize = paperSize.toLowerCase();
+  const portraitRatio =
+    normalizedSize === "letter"
+      ? "8.5 / 11"
+      : normalizedSize === "a5" || normalizedSize === "a4"
+        ? "210 / 297"
+        : "210 / 297";
+
+  if (orientation === "portrait") {
+    return portraitRatio;
+  }
+
+  return portraitRatio
+    .split("/")
+    .map((value) => value.trim())
+    .reverse()
+    .join(" / ");
+};
+
+function FlowRenameControl({
+  defaultTitle,
+  onRename,
+  t,
+  title,
+}: {
+  defaultTitle: string;
+  onRename: (title: string) => void;
+  t: Translator;
+  title: string;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(title);
+
+  useEffect(() => {
+    setDraftTitle(title);
+    setIsEditing(false);
+  }, [title]);
+
+  const commitTitle = () => {
+    const nextTitle = draftTitle.trim() || defaultTitle;
+
+    setDraftTitle(nextTitle);
+    onRename(nextTitle);
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <form
+        className="flowRenameControl isEditing"
+        onSubmit={(event) => {
+          event.preventDefault();
+          commitTitle();
+        }}
+      >
+        <input
+          autoFocus
+          value={draftTitle}
+          onBlur={commitTitle}
+          onChange={(event) => setDraftTitle(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setDraftTitle(title);
+              setIsEditing(false);
+            }
+          }}
+          aria-label={t("renameFlowInput")}
+        />
+      </form>
+    );
+  }
+
+  return (
+    <div className="flowRenameControl">
+      <h1 title={title}>{title}</h1>
+      <button
+        className="iconButton renameFlowButton"
+        type="button"
+        onClick={() => setIsEditing(true)}
+        aria-label={t("renamePrintFlow")}
+      >
+        <Pencil size={14} />
+      </button>
+    </div>
+  );
+}
+
 function FilePreview({
   chat,
   language,
+  previewSize,
   onPreviewPageChange,
+  onPreviewSizeChange,
   t,
 }: {
   chat: PrintChat;
   language: LanguageCode;
+  previewSize: PreviewSize;
   onPreviewPageChange: (page: number) => void;
+  onPreviewSizeChange: (size: PreviewSize) => void;
   t: Translator;
 }) {
   const file = chat.file;
@@ -2007,41 +2268,104 @@ function FilePreview({
     return null;
   }
 
+  const preview = chat.preview;
+  const pageCount = preview?.pageCount ?? file.pageCount;
+  const parsedPageRange = parsePreviewPageRange(chat.settings.pageRange, pageCount);
   const pageRange =
-    chat.settings.pageRange === "all"
+    parsedPageRange.kind === "all"
       ? t("allPages")
-      : chat.settings.pageRange;
+      : parsedPageRange.label;
   const orientationLabel = t(
     chat.settings.orientation === "portrait"
       ? "option.portrait"
       : "option.landscape",
+  );
+  const colorModeLabel = t(
+    chat.settings.colorMode === "grayscale"
+      ? "colorMode.grayscale"
+      : "colorMode.color",
   );
   const previewLabel = t("previewLabel", {
     orientation: orientationLabel,
     pageRange,
     paperSize: chat.settings.paperSize,
   });
-  const preview = chat.preview;
   const currentPage = preview?.currentPage ?? 1;
-  const pageCount = preview?.pageCount ?? file.pageCount;
+  const availablePages = preview?.pages ?? [];
+  const filteredPages =
+    parsedPageRange.kind === "valid"
+      ? availablePages.filter((page) => parsedPageRange.pages.includes(page.page))
+      : availablePages;
+  const navigationPages =
+    parsedPageRange.kind === "invalid"
+      ? availablePages.map((page) => page.page)
+      : filteredPages.length
+        ? filteredPages.map((page) => page.page)
+        : parsedPageRange.pages;
+  const activePage =
+    navigationPages.includes(currentPage) || navigationPages.length === 0
+      ? currentPage
+      : navigationPages[0];
   const currentImageUrl =
-    preview?.pages.find((page) => page.page === currentPage)?.url ??
+    filteredPages.find((page) => page.page === activePage)?.url ??
+    availablePages.find((page) => page.page === activePage)?.url ??
     file.previewUrl;
+  const selectedPreviewCount =
+    parsedPageRange.kind === "valid"
+      ? parsedPageRange.pages.length
+      : pageCount ?? availablePages.length;
+  const hasFilteredRange = parsedPageRange.kind === "valid";
+
+  useEffect(() => {
+    if (
+      navigationPages.length > 0 &&
+      !navigationPages.includes(currentPage)
+    ) {
+      onPreviewPageChange(navigationPages[0]);
+    }
+  }, [currentPage, navigationPages, onPreviewPageChange]);
 
   return (
-    <section className="filePreview" aria-label={t("selectedFilePreview")}>
-      <div className="fileSummary">
-        <div className="fileIcon" aria-hidden="true">
-          <FileText size={20} />
+    <section
+      className={`filePreview filePreview-${previewSize}`}
+      aria-label={t("selectedFilePreview")}
+    >
+      <div className="filePreviewHeader">
+        <div className="fileSummary">
+          <div className="fileIcon" aria-hidden="true">
+            <FileText size={20} />
+          </div>
+          <div className="fileCopy">
+            <h2 title={file.name}>{file.name}</h2>
+            <p>
+              {formatMimeType(file.mimeType, t)} / {formatFileSize(file.sizeBytes)} /{" "}
+              {formatPageCountValue(file.pageCount, language, t)}
+            </p>
+          </div>
         </div>
-        <div className="fileCopy">
-          <h2 title={file.name}>{file.name}</h2>
-          <p>
-            {formatMimeType(file.mimeType, t)} / {formatFileSize(file.sizeBytes)} /{" "}
-            {formatPageCountValue(file.pageCount, language, t)}
-          </p>
-        </div>
+
+        <PreviewSizeToggle
+          previewSize={previewSize}
+          t={t}
+          onPreviewSizeChange={onPreviewSizeChange}
+        />
       </div>
+
+      <div className="previewBadges" aria-label={t("currentPlan")}>
+        <span>{chat.settings.paperSize}</span>
+        <span>{orientationLabel}</span>
+        <span>{colorModeLabel}</span>
+        <span>{formatCopyCount(chat.settings.copies, language, t)}</span>
+        <span>{pageRange}</span>
+      </div>
+
+      {parsedPageRange.kind === "invalid" ? (
+        <p className="previewRangeNote previewRangeNote-error">
+          {t("previewRangeInvalid")} {parsedPageRange.message}
+        </p>
+      ) : hasFilteredRange ? (
+        <p className="previewRangeNote">{t("previewingSelectedPages")}</p>
+      ) : null}
 
       <div className="previewStage">
         <div className="previewCanvas">
@@ -2055,57 +2379,34 @@ function FilePreview({
               <AlertTriangle size={22} aria-hidden="true" />
               <p>{preview.error}</p>
             </div>
-          ) : currentImageUrl ? (
-            <img className="previewImage" src={currentImageUrl} alt={previewLabel} />
           ) : (
-            <div
-              className={`paperPreview paperPreview-${chat.settings.orientation}`}
-              role="img"
-              aria-label={previewLabel}
-            >
-              <div className="paperContent" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-              </div>
-            </div>
+            <PaperSheet
+              alt={previewLabel}
+              imageUrl={currentImageUrl}
+              pageNumber={activePage}
+              settings={chat.settings}
+              t={t}
+            />
           )}
+
           <div className="previewScaleNote">
-            {chat.settings.paperSize} / {orientationLabel} /{" "}
-            {formatCopyCount(chat.settings.copies, language, t)} /{" "}
-            {pageRange}
+            {t("previewSimulation")}
           </div>
-          {preview?.pages.length ? (
-            <div className="previewPager" aria-label={t("previewPages")}>
-              <button
-                type="button"
-                onClick={() => onPreviewPageChange(Math.max(1, currentPage - 1))}
-                disabled={currentPage <= 1}
-              >
-                {t("previous")}
-              </button>
-              <span>
-                {t("pageOf", {
-                  count: pageCount ?? preview.pages.length,
-                  page: currentPage,
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  onPreviewPageChange(
-                    Math.min(pageCount ?? preview.pages.length, currentPage + 1),
-                  )
-                }
-                disabled={currentPage >= (pageCount ?? preview.pages.length)}
-              >
-                {t("next")}
-              </button>
+
+          {navigationPages.length > 1 ? (
+            <PreviewPageStrip
+              currentPage={activePage}
+              pages={navigationPages}
+              pageTotal={selectedPreviewCount}
+              t={t}
+              onPreviewPageChange={onPreviewPageChange}
+            />
+          ) : navigationPages.length === 1 ? (
+            <div className="previewSinglePage">
+              {t("pageOf", {
+                count: selectedPreviewCount || 1,
+                page: 1,
+              })}
             </div>
           ) : null}
         </div>
@@ -2114,6 +2415,138 @@ function FilePreview({
   );
 }
 
+function PreviewSizeToggle({
+  onPreviewSizeChange,
+  previewSize,
+  t,
+}: {
+  onPreviewSizeChange: (size: PreviewSize) => void;
+  previewSize: PreviewSize;
+  t: Translator;
+}) {
+  return (
+    <div className="previewSizeToggle" aria-label={t("previewSize")}>
+      {(["compact", "large"] as const).map((size) => (
+        <button
+          key={size}
+          type="button"
+          className={previewSize === size ? "isSelected" : ""}
+          aria-pressed={previewSize === size}
+          onClick={() => onPreviewSizeChange(size)}
+        >
+          {t(size === "compact" ? "previewSize.compact" : "previewSize.large")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PaperSheet({
+  alt,
+  imageUrl,
+  pageNumber,
+  settings,
+  t,
+}: {
+  alt: string;
+  imageUrl?: string;
+  pageNumber: number;
+  settings: PrintSettings;
+  t: Translator;
+}) {
+  return (
+    <div
+      className={`paperSheet paperSheet-${settings.orientation} paperSheet-${settings.colorMode}`}
+      style={{ "--paper-aspect": getPaperAspectRatio(settings.paperSize, settings.orientation) } as CSSProperties}
+    >
+      <div className="printableArea">
+        {imageUrl ? (
+          <img className="previewImage" src={imageUrl} alt={alt} />
+        ) : (
+          <div className="paperPlaceholder" role="img" aria-label={alt}>
+            <div className="paperContent" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+          </div>
+        )}
+        <span className="sheetPageNumber">{pageNumber}</span>
+      </div>
+      {settings.colorMode === "grayscale" ? (
+        <span className="previewModeNote">{t("colorMode.grayscale")}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function PreviewPageStrip({
+  currentPage,
+  onPreviewPageChange,
+  pageTotal,
+  pages,
+  t,
+}: {
+  currentPage: number;
+  onPreviewPageChange: (page: number) => void;
+  pageTotal: number;
+  pages: number[];
+  t: Translator;
+}) {
+  const selectedIndex = Math.max(0, pages.indexOf(currentPage));
+  const previousPage = pages[selectedIndex - 1];
+  const nextPage = pages[selectedIndex + 1];
+
+  return (
+    <div className="previewNavigation" aria-label={t("previewPages")}>
+      <div className="previewPager">
+        <button
+          className="previewNavButton"
+          type="button"
+          onClick={() => onPreviewPageChange(previousPage)}
+          disabled={previousPage === undefined}
+          aria-label={t("previous")}
+        >
+          {t("previous")}
+        </button>
+        <span>
+          {t("pageOf", {
+            count: pageTotal || pages.length,
+            page: selectedIndex + 1,
+          })}
+        </span>
+        <button
+          className="previewNavButton"
+          type="button"
+          onClick={() => onPreviewPageChange(nextPage)}
+          disabled={nextPage === undefined}
+          aria-label={t("next")}
+        >
+          {t("next")}
+        </button>
+      </div>
+      <div className="previewPageStrip" role="list">
+        {pages.map((page) => (
+          <button
+            key={page}
+            className={page === currentPage ? "isSelected" : ""}
+            type="button"
+            onClick={() => onPreviewPageChange(page)}
+            aria-pressed={page === currentPage}
+            title={`${t("pages")} ${page}`}
+          >
+            {page}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 function Timeline({
   actions,
   language,
