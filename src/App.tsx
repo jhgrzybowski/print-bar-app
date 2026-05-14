@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import {
   AlertTriangle,
+  Ban,
   Check,
   CheckCircle2,
   Clock3,
@@ -13,6 +14,7 @@ import {
   MessageSquareText,
   Paperclip,
   Printer,
+  RefreshCw,
   Save,
   Send,
   Settings2,
@@ -23,17 +25,36 @@ import {
 import {
   defaultSettings,
   mockPrintChats,
-  mockUploadFile,
-  printerStatus,
   profiles,
 } from "./data/mockPrintData";
+import {
+  PrinterApiError,
+  createPrinterApi,
+  getPrinterApiBaseUrl,
+} from "./api/printerApi";
 import type {
+  FileUploadResponseDto,
+  JobInfoDto,
+  OptionBlockDto,
+  PreviewResponseDto,
+  PrinterOptionsResponseDto,
+  PrinterStatusDto,
+  PrintRequestDto,
+  PrintResponseDto,
+} from "./api/printerApi";
+import type {
+  BackendConnectionState,
+  PrinterCapabilities,
+  PrinterOptionCapability,
   PrintAction,
   PrintActionType,
   PrintChat,
+  PrintJob,
   PrinterProfile,
   PrinterStatus,
+  PrinterStatusDetails,
   PrintSettings,
+  UploadedFile,
 } from "./types/print";
 import {
   createTranslator,
@@ -559,6 +580,20 @@ const getSettingChangeDescription = (
     };
   }
 
+  if (key === "collate") {
+    return {
+      title: baseTitle,
+      description: `${t("collate")}: ${value ? "On" : "Off"}`,
+    };
+  }
+
+  if (key === "mediaType") {
+    return {
+      title: baseTitle,
+      description: `${t("mediaType")}: ${String(value)}`,
+    };
+  }
+
   return {
     title: baseTitle,
     description: "",
@@ -568,10 +603,16 @@ const getSettingChangeDescription = (
 const getDisabledReason = (
   chat: PrintChat,
   status: PrinterStatus,
+  backendReachable: boolean,
+  unsupportedSelectedSettings: string[],
   t: Translator,
 ) => {
   if (!chat.file) {
     return t("disabled.noFile");
+  }
+
+  if (!backendReachable) {
+    return t("disabled.backendUnavailable");
   }
 
   if (status !== "ready") {
@@ -586,6 +627,10 @@ const getDisabledReason = (
     return t("disabled.invalidPageRange");
   }
 
+  if (unsupportedSelectedSettings.length > 0) {
+    return t("disabled.unsupportedSettings");
+  }
+
   return "";
 };
 
@@ -596,15 +641,270 @@ const getLatestGuidance = (chat: PrintChat) =>
       ["assistant_message", "warning", "error"].includes(action.type),
     );
 
+const createDraftChat = (): PrintChat => ({
+  id: generateId(),
+  title: "New print flow",
+  status: "draft",
+  settings: defaultSettings,
+  actions: [
+    makeAction(
+      "assistant_message",
+      "Waiting for a file",
+      "Upload a PDF, image, or text file to start a real print flow.",
+    ),
+  ],
+  updatedAt: new Date().toISOString(),
+});
+
+const fallbackCapability = (
+  choices: string[],
+  notes = "Using safe defaults until printer options load.",
+): PrinterOptionCapability => ({
+  choices,
+  mapping: {},
+  notes,
+  recommendedMapping: {},
+  supported: true,
+});
+
+const fallbackCapabilities: PrinterCapabilities = {
+  collate: fallbackCapability(["true", "false"]),
+  colorModes: fallbackCapability(["color", "monochrome"]),
+  duplexModes: fallbackCapability(["none", "long-edge", "short-edge"]),
+  fitToPage: fallbackCapability(["true", "false"]),
+  mediaTypes: fallbackCapability(["plain"]),
+  orientation: fallbackCapability(["portrait", "landscape"]),
+  paperSizes: fallbackCapability(["A4", "A5", "Letter"]),
+  quality: fallbackCapability(["draft", "normal", "high"]),
+};
+
+const mapOptionBlock = (
+  block: OptionBlockDto,
+  fallbackChoices: string[],
+): PrinterOptionCapability => ({
+  choices: block.choices.length > 0 ? block.choices : fallbackChoices,
+  mapping: block.mapping ?? {},
+  notes: block.notes,
+  recommendedMapping: block.recommended_mapping ?? {},
+  supported: block.supported,
+});
+
+const mapCapabilities = (options: PrinterOptionsResponseDto): PrinterCapabilities => ({
+  collate: mapOptionBlock(options.collate, ["true", "false"]),
+  colorModes: mapOptionBlock(options.color_modes, ["color", "monochrome"]),
+  duplexModes: mapOptionBlock(options.duplex_modes, [
+    "none",
+    "long-edge",
+    "short-edge",
+  ]),
+  fitToPage: mapOptionBlock(options.fit_to_page, ["true", "false"]),
+  mediaTypes: mapOptionBlock(options.media_types, ["plain"]),
+  orientation: mapOptionBlock(options.orientation, ["portrait", "landscape"]),
+  paperSizes: mapOptionBlock(options.paper_sizes, ["A4", "A5", "Letter"]),
+  quality: mapOptionBlock(options.quality, ["draft", "normal", "high"]),
+  queue: options.queue,
+});
+
+const mapUploadedFile = (file: FileUploadResponseDto): UploadedFile => ({
+  id: file.file_id,
+  mimeType: file.detected_mime,
+  name: file.original_filename,
+  pageCount: file.page_count ?? undefined,
+  previewAvailable: file.preview_available,
+  sizeBytes: file.size_bytes,
+});
+
+const mapBackendStatus = (status?: PrinterStatusDto): PrinterStatus => {
+  if (!status) {
+    return "offline";
+  }
+
+  if (!status.cups.available || !status.exists) {
+    return "offline";
+  }
+
+  if (!status.enabled || status.state === "stopped" || status.state === "missing") {
+    return "error";
+  }
+
+  const blockingReasons = status.reasons.filter(
+    (reason) => reason.trim().toLowerCase() !== "none",
+  );
+
+  if (status.accepting_jobs === false || blockingReasons.length > 0) {
+    return "warning";
+  }
+
+  return "ready";
+};
+
+const mapJob = (job: JobInfoDto): PrintJob => ({
+  completedAt: job.completed_at === undefined || job.completed_at === null
+    ? undefined
+    : String(job.completed_at),
+  createdAt: job.created_at === undefined || job.created_at === null
+    ? undefined
+    : String(job.created_at),
+  id: job.job_id,
+  name: job.name,
+  queue: job.queue,
+  reasons: job.reasons ?? [],
+  state: job.state,
+  user: job.user,
+});
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof PrinterApiError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unexpected printer backend error.";
+};
+
+const mapSettingsToPrintRequest = (
+  fileId: string,
+  settings: PrintSettings,
+): PrintRequestDto => ({
+  file_id: fileId,
+  options: {
+    collate: settings.collate,
+    color_mode: settings.colorMode === "grayscale" ? "monochrome" : "color",
+    copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, settings.copies)),
+    duplex: settings.duplex,
+    fit_to_page: settings.fitToPage,
+    media_type: settings.mediaType,
+    orientation: settings.orientation,
+    pages: settings.pageRange === "all" ? null : settings.pageRange,
+    paper_size: settings.paperSize,
+    quality: settings.quality,
+  },
+});
+
+const isSupportedChoice = (
+  capability: PrinterOptionCapability,
+  value: string,
+) =>
+  !capability.supported ||
+  capability.choices.length === 0 ||
+  capability.choices.includes(value);
+
+const getUnsupportedSelectedSettings = (
+  settings: PrintSettings,
+  capabilities: PrinterCapabilities,
+  t: Translator,
+) => {
+  const unsupportedSelections: string[] = [];
+  const colorMode = settings.colorMode === "grayscale" ? "monochrome" : "color";
+
+  if (!isSupportedChoice(capabilities.colorModes, colorMode)) {
+    unsupportedSelections.push(
+      `${t("color")}: ${t(settings.colorMode === "grayscale" ? "colorMode.grayscale" : "colorMode.color")}`,
+    );
+  }
+
+  if (!isSupportedChoice(capabilities.paperSizes, settings.paperSize)) {
+    unsupportedSelections.push(`${t("paperSize")}: ${settings.paperSize}`);
+  }
+
+  if (!isSupportedChoice(capabilities.orientation, settings.orientation)) {
+    unsupportedSelections.push(
+      `${t("orientation")}: ${t(settings.orientation === "portrait" ? "option.portrait" : "option.landscape")}`,
+    );
+  }
+
+  if (!isSupportedChoice(capabilities.duplexModes, settings.duplex)) {
+    const duplexLabel =
+      settings.duplex === "none"
+        ? t("duplex.none")
+        : settings.duplex === "long-edge"
+          ? t("duplex.longEdge")
+          : t("duplex.shortEdge");
+
+    unsupportedSelections.push(`${t("duplex")}: ${duplexLabel}`);
+  }
+
+  if (!isSupportedChoice(capabilities.quality, settings.quality)) {
+    const qualityLabel =
+      settings.quality === "draft"
+        ? t("option.draft")
+        : settings.quality === "normal"
+          ? t("option.normal")
+          : t("option.high");
+
+    unsupportedSelections.push(`${t("quality")}: ${qualityLabel}`);
+  }
+
+  if (!isSupportedChoice(capabilities.fitToPage, String(settings.fitToPage))) {
+    unsupportedSelections.push(`${t("fitToPage")}: ${settings.fitToPage ? "On" : "Off"}`);
+  }
+
+  if (!isSupportedChoice(capabilities.collate, String(settings.collate ?? true))) {
+    unsupportedSelections.push(`${t("collate")}: ${(settings.collate ?? true) ? "On" : "Off"}`);
+  }
+
+  if (!isSupportedChoice(capabilities.mediaTypes, settings.mediaType ?? "plain")) {
+    unsupportedSelections.push(`${t("mediaType")}: ${settings.mediaType ?? "plain"}`);
+  }
+
+  return unsupportedSelections;
+};
+
+const formatAppliedOptions = (response: PrintResponseDto) => {
+  const count = Object.keys(response.applied_options).length;
+  const unsupported = response.unsupported_options.length;
+  const warnings = response.warnings.length;
+  const details = [`${count} backend option${count === 1 ? "" : "s"} applied`];
+
+  if (unsupported) {
+    details.push(`${unsupported} unsupported`);
+  }
+
+  if (warnings) {
+    details.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+  }
+
+  return details.join(", ");
+};
+
 function App() {
-  const [printChats, setPrintChats] = useState<PrintChat[]>(mockPrintChats);
-  const [selectedChatId, setSelectedChatId] = useState(mockPrintChats[0].id);
+  const api = useMemo(
+    () => createPrinterApi({ baseUrl: getPrinterApiBaseUrl() }),
+    [],
+  );
+  const [printChats, setPrintChats] = useState<PrintChat[]>(() => [
+    createDraftChat(),
+    ...mockPrintChats,
+  ]);
+  const [selectedChatId, setSelectedChatId] = useState(() => printChats[0].id);
   const [selectedProfileId, setSelectedProfileId] = useState(profiles[0].id);
   const [language, setLanguage] = useState<LanguageCode>(getInitialLanguage);
   const [command, setCommand] = useState("");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  const [backendConnection, setBackendConnection] =
+    useState<BackendConnectionState>({
+      baseUrl: api.baseUrl,
+      isLoading: true,
+      reachable: false,
+    });
+  const [printerStatus, setPrinterStatus] = useState<PrinterStatus>("offline");
+  const [printerDetails, setPrinterDetails] =
+    useState<PrinterStatusDetails>({
+      reasons: [],
+    });
+  const [capabilities, setCapabilities] =
+    useState<PrinterCapabilities>(fallbackCapabilities);
+  const [optionsError, setOptionsError] = useState("");
+  const [jobs, setJobs] = useState<PrintJob[]>([]);
+  const [jobsError, setJobsError] = useState("");
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0];
@@ -637,10 +937,18 @@ function App() {
     "--workspace-header-bg": selectedProfile.workspaceHeaderBgColor,
   } as CSSProperties;
 
+  const unsupportedSelectedSettings = getUnsupportedSelectedSettings(
+    selectedChat.settings,
+    capabilities,
+    t,
+  );
   const canPrint = Boolean(
     selectedChat.file &&
+      backendConnection.reachable &&
       printerStatus === "ready" &&
       isEditableChat(selectedChat) &&
+      !isPrinting &&
+      unsupportedSelectedSettings.length === 0 &&
       isValidCopies(selectedChat.settings.copies) &&
       isValidPageRange(
         selectedChat.settings.pageRange === "all"
@@ -648,7 +956,13 @@ function App() {
           : selectedChat.settings.pageRange,
       )
   );
-  const disabledReason = getDisabledReason(selectedChat, printerStatus, t);
+  const disabledReason = getDisabledReason(
+    selectedChat,
+    printerStatus,
+    backendConnection.reachable,
+    unsupportedSelectedSettings,
+    t,
+  );
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -662,13 +976,113 @@ function App() {
     }
   }, [language]);
 
-  const updateSelectedChat = (updater: (chat: PrintChat) => PrintChat) => {
+  const updateChatById = (
+    chatId: string,
+    updater: (chat: PrintChat) => PrintChat,
+  ) => {
     setPrintChats((currentChats) =>
       currentChats.map((chat) =>
-        chat.id === selectedChatId ? updater(chat) : chat,
+        chat.id === chatId ? updater(chat) : chat,
       ),
     );
   };
+
+  const updateSelectedChat = (updater: (chat: PrintChat) => PrintChat) => {
+    updateChatById(selectedChatId, updater);
+  };
+
+  const refreshJobs = useCallback(async () => {
+    setJobsLoading(true);
+    setJobsError("");
+
+    try {
+      const response = await api.jobs();
+      setJobs(response.jobs.map(mapJob));
+    } catch (error) {
+      setJobsError(getErrorMessage(error));
+      setJobs([]);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [api]);
+
+  const refreshBackendState = useCallback(async () => {
+    const checkedAt = new Date().toISOString();
+    setBackendConnection((current) => ({
+      ...current,
+      error: undefined,
+      isLoading: true,
+    }));
+
+    try {
+      const health = await api.health();
+      setBackendConnection({
+        baseUrl: api.baseUrl,
+        isLoading: false,
+        lastCheckedAt: checkedAt,
+        reachable: true,
+        service: health.service,
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setBackendConnection({
+        baseUrl: api.baseUrl,
+        error: message,
+        isLoading: false,
+        lastCheckedAt: checkedAt,
+        reachable: false,
+      });
+      setPrinterStatus("offline");
+      setPrinterDetails({
+        cupsAvailable: false,
+        cupsError: message,
+        reasons: [],
+      });
+      setOptionsError("Printer options are using safe defaults until the backend is reachable.");
+      setJobs([]);
+      setJobsError(message);
+      return;
+    }
+
+    try {
+      const status = await api.status();
+      setPrinterStatus(mapBackendStatus(status));
+      setPrinterDetails({
+        acceptingJobs: status.accepting_jobs,
+        cupsAvailable: status.cups.available,
+        cupsError: status.cups.error,
+        enabled: status.enabled,
+        exists: status.exists,
+        location: status.location,
+        message: status.message,
+        queueName: status.queue_name,
+        reasons: status.reasons,
+        state: status.state,
+      });
+    } catch (error) {
+      setPrinterStatus("error");
+      setPrinterDetails({
+        cupsAvailable: false,
+        cupsError: getErrorMessage(error),
+        reasons: [],
+      });
+    }
+
+    try {
+      const options = await api.options();
+      setCapabilities(mapCapabilities(options));
+      setOptionsError("");
+    } catch (error) {
+      setCapabilities(fallbackCapabilities);
+      setOptionsError(getErrorMessage(error));
+    }
+
+    await refreshJobs();
+  }, [api, refreshJobs]);
+
+  useEffect(() => {
+    void refreshBackendState();
+  }, [refreshBackendState]);
 
   const updateSetting = <Key extends SettingsKey>(
     key: Key,
@@ -768,52 +1182,158 @@ function App() {
     }));
   };
 
-  const handleMockUpload = () => {
-    updateSelectedChat((chat) => ({
-      ...chat,
-      title: mockUploadFile.name,
-      status: "ready",
-      file: mockUploadFile,
-      settings: {
-        ...defaultSettings,
-        ...chat.settings,
-      },
-      actions: [
-        ...chat.actions,
-        makeTranslatedAction(
-          "file_uploaded",
-          "chat.upload.file.title",
-          "chat.upload.file.description",
-          t,
-        ),
-        makeTranslatedAction(
-          "preview_generated",
-          "chat.upload.preview.title",
-          "chat.upload.preview.description",
-          t,
-        ),
-        makeTranslatedAction(
-          "assistant_message",
-          "chat.upload.assistant.title",
-          "chat.upload.assistant.description",
-          t,
-        ),
-      ],
-      updatedAt: new Date().toISOString(),
-    }));
-  };
-
-  const handleAttach = () => {
-    if (!selectedChat.file) {
-      handleMockUpload();
+  const loadPreviewForChat = async (chatId: string, file: UploadedFile) => {
+    if (!file.previewAvailable) {
+      updateChatById(chatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction(
+            "assistant_message",
+            "Preview unavailable",
+            "The backend accepted this file, but no preview image is available.",
+          ),
+        ],
+        preview: {
+          currentPage: 1,
+          isLoading: false,
+          pageCount: file.pageCount,
+          pages: [],
+        },
+        updatedAt: new Date().toISOString(),
+      }));
       return;
     }
 
-    addTranslatedActionToSelectedChat(
-      "assistant_message",
-      "chat.fileAlreadySelected.title",
-      "chat.fileAlreadySelected.description",
-    );
+    updateChatById(chatId, (chat) => ({
+      ...chat,
+      preview: {
+        currentPage: 1,
+        isLoading: true,
+        pageCount: file.pageCount,
+        pages: [],
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+
+    try {
+      const preview: PreviewResponseDto = await api.previewFile(file.id);
+      const pages = preview.pages.map((page) => ({
+        page: page.page,
+        sizeBytes: page.size_bytes,
+        url: api.resolveUrl(page.url),
+      }));
+      const firstPageUrl =
+        pages[0]?.url ?? api.previewPageUrl(file.id, pages[0]?.page ?? 1);
+
+      updateChatById(chatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction(
+            "preview_generated",
+            "Preview generated",
+            `${preview.page_count ?? (pages.length || file.pageCount) ?? "Unknown"} page preview ready.`,
+          ),
+        ],
+        file: {
+          ...file,
+          pageCount: preview.page_count ?? file.pageCount,
+          previewUrl: firstPageUrl,
+        },
+        preview: {
+          currentPage: pages[0]?.page ?? 1,
+          isLoading: false,
+          pageCount: preview.page_count ?? file.pageCount,
+          pages,
+        },
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (error) {
+      const message = getErrorMessage(error);
+      updateChatById(chatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction("error", "Preview failed", message),
+        ],
+        preview: {
+          currentPage: 1,
+          error: message,
+          isLoading: false,
+          pageCount: file.pageCount,
+          pages: [],
+        },
+        updatedAt: new Date().toISOString(),
+      }));
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    const targetChat = isEditableChat(selectedChat) ? selectedChat : createDraftChat();
+    const targetChatId = targetChat.id;
+
+    if (targetChat.id !== selectedChat.id) {
+      setPrintChats((currentChats) => [targetChat, ...currentChats]);
+      setSelectedChatId(targetChat.id);
+    }
+
+    setIsUploading(true);
+
+    try {
+      const response = await api.uploadFile(file);
+      const uploadedFile = mapUploadedFile(response);
+
+      updateChatById(targetChatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction(
+            "file_uploaded",
+            "File uploaded",
+            `${formatMimeType(uploadedFile.mimeType, t)} detected, ${formatFileSize(uploadedFile.sizeBytes)}.`,
+          ),
+        ],
+        file: uploadedFile,
+        preview: {
+          currentPage: 1,
+          isLoading: Boolean(uploadedFile.previewAvailable),
+          pageCount: uploadedFile.pageCount,
+          pages: [],
+        },
+        settings: {
+          ...defaultSettings,
+          ...chat.settings,
+        },
+        status: "ready",
+        title: uploadedFile.name,
+        updatedAt: new Date().toISOString(),
+      }));
+
+      await loadPreviewForChat(targetChatId, uploadedFile);
+    } catch (error) {
+      updateChatById(targetChatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction("error", "Upload failed", getErrorMessage(error)),
+        ],
+        status: "error",
+        updatedAt: new Date().toISOString(),
+      }));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAttach = () => {
+    if (selectedChat.file) {
+      addTranslatedActionToSelectedChat(
+        "assistant_message",
+        "chat.fileAlreadySelected.title",
+        "chat.fileAlreadySelected.description",
+      );
+    }
   };
 
   const handleCommandSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -864,13 +1384,43 @@ function App() {
   };
 
   const handlePreview = () => {
-    addTranslatedActionToSelectedChat(
-      "preview_generated",
-      "chat.previewRefreshed.title",
-      selectedChat.file
-        ? "chat.previewRefreshed.withFile"
-        : "chat.previewRefreshed.noFile",
+    if (!selectedChat.file) {
+      addTranslatedActionToSelectedChat(
+        "error",
+        "chat.previewRefreshed.title",
+        "chat.previewRefreshed.noFile",
+      );
+      return;
+    }
+
+    void loadPreviewForChat(selectedChat.id, selectedChat.file);
+  };
+
+  const handlePreviewPageChange = (page: number) => {
+    if (!selectedChat.file || !selectedChat.preview) {
+      return;
+    }
+
+    const nextPage = selectedChat.preview.pages.find(
+      (previewPage) => previewPage.page === page,
     );
+
+    updateSelectedChat((chat) => ({
+      ...chat,
+      file: chat.file
+        ? {
+            ...chat.file,
+            previewUrl: nextPage?.url ?? api.previewPageUrl(chat.file.id, page),
+          }
+        : chat.file,
+      preview: chat.preview
+        ? {
+            ...chat.preview,
+            currentPage: page,
+          }
+        : chat.preview,
+      updatedAt: new Date().toISOString(),
+    }));
   };
 
   const handleSavePreset = () => {
@@ -881,44 +1431,126 @@ function App() {
     );
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!canPrint) {
       return;
     }
 
-    updateSelectedChat((chat) => ({
-      ...chat,
-      status: "queued",
-      settings: {
-        ...chat.settings,
-        // Clamp copies to valid range before submission
-        copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, chat.settings.copies)),
-      },
-      actions: [
-        ...chat.actions,
-        makeTranslatedAction(
-          "print_submitted",
-          "chat.printSubmitted.title",
-          "chat.printSubmitted.description",
-          t,
-          {
-            copies: formatCopyCount(
-              Math.max(MIN_COPIES, Math.min(MAX_COPIES, chat.settings.copies)),
-              language,
-              t,
-            ),
-            fileName: chat.file?.name ?? "",
-          },
-        ),
-        makeTranslatedAction(
-          "assistant_message",
-          "chat.printQueued.title",
-          "chat.printQueued.description",
-          t,
-        ),
-      ],
-      updatedAt: new Date().toISOString(),
-    }));
+    const chatId = selectedChat.id;
+    const file = selectedChat.file;
+
+    if (!file) {
+      return;
+    }
+
+    setIsPrinting(true);
+
+    try {
+      const response = await api.print(
+        mapSettingsToPrintRequest(file.id, selectedChat.settings),
+      );
+
+      updateChatById(chatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction(
+            "print_submitted",
+            "Print submitted",
+            `${response.submitted_filename} sent to ${response.queue} as job #${response.job_id}. ${formatAppliedOptions(response)}.`,
+            {
+              appliedOptions: response.applied_options,
+              unsupportedOptions: response.unsupported_options,
+              warnings: response.warnings,
+            },
+          ),
+          ...(response.unsupported_options.length || response.warnings.length
+            ? [
+                makeAction(
+                  "warning",
+                  "Backend guidance",
+                  [
+                    ...response.warnings,
+                    ...response.unsupported_options.map(
+                      (option) => `${option} is not supported by this printer.`,
+                    ),
+                  ].join(" "),
+                ),
+              ]
+            : []),
+        ],
+        jobId: response.job_id,
+        status: "queued",
+        updatedAt: new Date().toISOString(),
+      }));
+
+      await refreshJobs();
+    } catch (error) {
+      updateChatById(chatId, (chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction("error", "Print failed", getErrorMessage(error)),
+        ],
+        status: "ready",
+        updatedAt: new Date().toISOString(),
+      }));
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const handleCancelJob = async (jobId: number) => {
+    try {
+      const response = await api.cancelJob(jobId);
+      const message =
+        response.message ??
+        (response.cancelled
+          ? "Job cancelled."
+          : "No active job was available to cancel.");
+      let matched = false;
+
+      setPrintChats((currentChats) =>
+        currentChats.map((chat) => {
+          if (chat.jobId !== jobId) {
+            return chat;
+          }
+
+          matched = true;
+          return {
+            ...chat,
+            actions: [
+              ...chat.actions,
+              makeAction("print_cancelled", "Job cancelled", message),
+            ],
+            status: response.cancelled ? "cancelled" : chat.status,
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+      );
+
+      if (!matched) {
+        updateSelectedChat((chat) => ({
+          ...chat,
+          actions: [
+            ...chat.actions,
+            makeAction("print_cancelled", `Job #${jobId} cancelled`, message),
+          ],
+          updatedAt: new Date().toISOString(),
+        }));
+      }
+
+      await refreshJobs();
+    } catch (error) {
+      updateSelectedChat((chat) => ({
+        ...chat,
+        actions: [
+          ...chat.actions,
+          makeAction("error", `Could not cancel job #${jobId}`, getErrorMessage(error)),
+        ],
+        updatedAt: new Date().toISOString(),
+      }));
+    }
   };
 
   return (
@@ -932,7 +1564,9 @@ function App() {
       />
       <div className="appShell">
         <PrinterSidebar
+          backend={backendConnection}
           chats={printChats}
+          details={printerDetails}
           selectedChatId={selectedChat.id}
           status={printerStatus}
           selectedProfile={selectedProfile}
@@ -950,21 +1584,30 @@ function App() {
           onSelectLanguage={setLanguage}
           onToggleSettings={() => setProfileSettingsOpen((current) => !current)}
           onCloseSettings={() => setProfileSettingsOpen(false)}
+          onRefresh={refreshBackendState}
         />
         <MainWorkspace
           chat={selectedChat}
           command={command}
+          isUploading={isUploading}
           language={language}
           t={t}
           onCommandChange={setCommand}
           onCommandSubmit={handleCommandSubmit}
-          onMockUpload={handleMockUpload}
           onAttach={handleAttach}
+          onPreviewPageChange={handlePreviewPageChange}
+          onUploadFile={handleFileUpload}
           onOpenFlows={() => setLeftOpen(true)}
           onOpenSettings={() => setRightOpen(true)}
         />
         <PreferencesPanel
+          backend={backendConnection}
+          capabilities={capabilities}
           chat={selectedChat}
+          jobs={jobs}
+          jobsError={jobsError}
+          jobsLoading={jobsLoading}
+          optionsError={optionsError}
           status={printerStatus}
           profiles={profiles}
           selectedProfileId={selectedProfile.id}
@@ -972,9 +1615,14 @@ function App() {
           t={t}
           canPrint={canPrint}
           disabledReason={disabledReason}
+          unsupportedSelectedSettings={unsupportedSelectedSettings}
           canEditSettings={isEditableChat(selectedChat)}
+          isPrinting={isPrinting}
           isOpen={rightOpen}
           onClose={() => setRightOpen(false)}
+          onCancelJob={handleCancelJob}
+          onRefreshBackend={refreshBackendState}
+          onRefreshJobs={refreshJobs}
           onSettingChange={updateSetting}
           onProfileChange={handleSelectProfile}
           onPreview={handlePreview}
@@ -987,7 +1635,9 @@ function App() {
 }
 
 type PrinterSidebarProps = {
+  backend: BackendConnectionState;
   chats: PrintChat[];
+  details: PrinterStatusDetails;
   selectedChatId: string;
   status: PrinterStatus;
   selectedProfile: PrinterProfile;
@@ -1002,10 +1652,13 @@ type PrinterSidebarProps = {
   onSelectProfile: (profileId: string) => void;
   onToggleSettings: () => void;
   onCloseSettings: () => void;
+  onRefresh: () => void;
 };
 
 function PrinterSidebar({
+  backend,
   chats,
+  details,
   selectedChatId,
   status,
   selectedProfile,
@@ -1020,9 +1673,11 @@ function PrinterSidebar({
   onSelectProfile,
   onToggleSettings,
   onCloseSettings,
+  onRefresh,
 }: PrinterSidebarProps) {
   const queuedCount = chats.filter((chat) => chat.status === "queued").length;
   const selectedLanguage = getLanguage(language);
+  const queueName = details.queueName ?? "Canon MG5350";
 
   return (
     <aside className={`printerSidebar ${isOpen ? "isOpen" : ""}`}>
@@ -1036,36 +1691,51 @@ function PrinterSidebar({
           <Printer size={18} />
         </div>
         <div className="printerCopy">
-          <h2>Canon MG5350</h2>
+          <h2>{queueName}</h2>
           <div className="statusLine">
             <span className={`statusDot statusDot-${status}`} aria-hidden="true" />
             <span>{getStatusLabel(status, t)}</span>
           </div>
         </div>
+        <button
+          className="iconButton sidebarRefreshButton"
+          type="button"
+          onClick={onRefresh}
+          aria-label={t("refreshStatus")}
+          disabled={backend.isLoading}
+        >
+          <RefreshCw size={15} />
+        </button>
       </div>
 
       <dl className="printerMeta" aria-label={t("printerMetadata")}>
         <div>
           <dt>{t("queue")}</dt>
-          <dd>
-            {queuedCount === 0
-              ? t("queueClear")
-              : t("queueWaiting", { count: queuedCount })}
-          </dd>
+          <dd>{queuedCount === 0 ? t("queueClear") : t("queueWaiting", { count: queuedCount })}</dd>
         </div>
         <div>
-          <dt>{t("paper")}</dt>
-          <dd>{t("paperLoaded", { paperSize: "A4" })}</dd>
+          <dt>{t("backend")}</dt>
+          <dd>{backend.reachable ? t("connected") : t("unreachable")}</dd>
         </div>
         <div>
-          <dt>{t("ink")}</dt>
-          <dd>{t("inkGood")}</dd>
+          <dt>{t("printerState")}</dt>
+          <dd>{details.state ?? t("unknown")}</dd>
         </div>
         <div>
           <dt>{t("lastSeen")}</dt>
-          <dd>{t("lastSeenValue")}</dd>
+          <dd>
+            {backend.lastCheckedAt
+              ? formatTime(backend.lastCheckedAt, getLocale(language))
+              : t("unknown")}
+          </dd>
         </div>
       </dl>
+      {backend.error || details.message || details.cupsError ? (
+        <div className={`sidebarNotice sidebarNotice-${status}`}>
+          <AlertTriangle size={14} aria-hidden="true" />
+          <p>{backend.error ?? details.cupsError ?? details.message}</p>
+        </div>
+      ) : null}
 
       <nav className="flowList" aria-label={t("latestPrints")}>
         <h2>{t("latestPrints")}</h2>
@@ -1180,12 +1850,14 @@ function PrinterSidebar({
 type MainWorkspaceProps = {
   chat: PrintChat;
   command: string;
+  isUploading: boolean;
   language: LanguageCode;
   t: Translator;
   onCommandChange: (command: string) => void;
   onCommandSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onMockUpload: () => void;
   onAttach: () => void;
+  onPreviewPageChange: (page: number) => void;
+  onUploadFile: (file: File) => void;
   onOpenFlows: () => void;
   onOpenSettings: () => void;
 };
@@ -1193,19 +1865,29 @@ type MainWorkspaceProps = {
 function MainWorkspace({
   chat,
   command,
+  isUploading,
   language,
   t,
   onCommandChange,
   onCommandSubmit,
-  onMockUpload,
   onAttach,
+  onPreviewPageChange,
+  onUploadFile,
   onOpenFlows,
   onOpenSettings,
 }: MainWorkspaceProps) {
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const latestGuidance = getLatestGuidance(chat);
   const latestGuidanceCopy = latestGuidance
     ? getActionCopy(latestGuidance, t)
     : undefined;
+  const submitSelectedFile = (files: FileList | null) => {
+    const file = files?.[0];
+
+    if (file) {
+      onUploadFile(file);
+    }
+  };
 
   return (
     <main className="mainWorkspace">
@@ -1246,13 +1928,39 @@ function MainWorkspace({
 
       <section className="workspaceBody" aria-label={t("selectedFileWorkspace")}>
         {chat.file ? (
-          <FilePreview chat={chat} language={language} t={t} />
+          <FilePreview
+            chat={chat}
+            language={language}
+            t={t}
+            onPreviewPageChange={onPreviewPageChange}
+          />
         ) : (
-          <button className="uploadZone" type="button" onClick={onMockUpload}>
-            <Upload size={22} />
-            <span className="uploadTitle">{t("uploadTitle")}</span>
-            <span className="uploadMeta">{t("uploadMeta")}</span>
-          </button>
+          <>
+            <input
+              ref={uploadInputRef}
+              className="visuallyHidden"
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,text/plain"
+              onChange={(event) => submitSelectedFile(event.currentTarget.files)}
+            />
+            <button
+              className="uploadZone"
+              type="button"
+              onClick={() => uploadInputRef.current?.click()}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                submitSelectedFile(event.dataTransfer.files);
+              }}
+              disabled={isUploading}
+            >
+              <Upload size={22} />
+              <span className="uploadTitle">
+                {isUploading ? t("uploading") : t("uploadTitle")}
+              </span>
+              <span className="uploadMeta">{t("uploadMeta")}</span>
+            </button>
+          </>
         )}
 
         {latestGuidance ? (
@@ -1276,6 +1984,7 @@ function MainWorkspace({
         onCommandChange={onCommandChange}
         onCommandSubmit={onCommandSubmit}
         onAttach={onAttach}
+        onUploadFile={onUploadFile}
       />
     </main>
   );
@@ -1284,10 +1993,12 @@ function MainWorkspace({
 function FilePreview({
   chat,
   language,
+  onPreviewPageChange,
   t,
 }: {
   chat: PrintChat;
   language: LanguageCode;
+  onPreviewPageChange: (page: number) => void;
   t: Translator;
 }) {
   const file = chat.file;
@@ -1310,6 +2021,12 @@ function FilePreview({
     pageRange,
     paperSize: chat.settings.paperSize,
   });
+  const preview = chat.preview;
+  const currentPage = preview?.currentPage ?? 1;
+  const pageCount = preview?.pageCount ?? file.pageCount;
+  const currentImageUrl =
+    preview?.pages.find((page) => page.page === currentPage)?.url ??
+    file.previewUrl;
 
   return (
     <section className="filePreview" aria-label={t("selectedFilePreview")}>
@@ -1328,27 +2045,69 @@ function FilePreview({
 
       <div className="previewStage">
         <div className="previewCanvas">
-          <div
-            className={`paperPreview paperPreview-${chat.settings.orientation}`}
-            role="img"
-            aria-label={previewLabel}
-          >
-            <div className="paperContent" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
+          {preview?.isLoading ? (
+            <div className="previewState">
+              <FileSearch size={22} aria-hidden="true" />
+              <p>{t("previewLoading")}</p>
             </div>
-          </div>
+          ) : preview?.error ? (
+            <div className="previewState previewState-error">
+              <AlertTriangle size={22} aria-hidden="true" />
+              <p>{preview.error}</p>
+            </div>
+          ) : currentImageUrl ? (
+            <img className="previewImage" src={currentImageUrl} alt={previewLabel} />
+          ) : (
+            <div
+              className={`paperPreview paperPreview-${chat.settings.orientation}`}
+              role="img"
+              aria-label={previewLabel}
+            >
+              <div className="paperContent" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </div>
+            </div>
+          )}
           <div className="previewScaleNote">
             {chat.settings.paperSize} / {orientationLabel} /{" "}
             {formatCopyCount(chat.settings.copies, language, t)} /{" "}
             {pageRange}
           </div>
+          {preview?.pages.length ? (
+            <div className="previewPager" aria-label={t("previewPages")}>
+              <button
+                type="button"
+                onClick={() => onPreviewPageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage <= 1}
+              >
+                {t("previous")}
+              </button>
+              <span>
+                {t("pageOf", {
+                  count: pageCount ?? preview.pages.length,
+                  page: currentPage,
+                })}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onPreviewPageChange(
+                    Math.min(pageCount ?? preview.pages.length, currentPage + 1),
+                  )
+                }
+                disabled={currentPage >= (pageCount ?? preview.pages.length)}
+              >
+                {t("next")}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -1431,6 +2190,7 @@ type CommandBarProps = {
   onCommandChange: (command: string) => void;
   onCommandSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onAttach: () => void;
+  onUploadFile: (file: File) => void;
 };
 
 function CommandBar({
@@ -1439,14 +2199,34 @@ function CommandBar({
   onCommandChange,
   onCommandSubmit,
   onAttach,
+  onUploadFile,
 }: CommandBarProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const submitSelectedFile = (files: FileList | null) => {
+    const file = files?.[0];
+
+    if (file) {
+      onUploadFile(file);
+    }
+  };
+
   return (
     <form className="commandBar" onSubmit={onCommandSubmit}>
+      <input
+        ref={inputRef}
+        className="visuallyHidden"
+        type="file"
+        accept="application/pdf,image/png,image/jpeg,text/plain"
+        onChange={(event) => submitSelectedFile(event.currentTarget.files)}
+      />
       <button
         className="iconButton"
         type="button"
-        onClick={onAttach}
-        aria-label={t("attachMockedFile")}
+        onClick={() => {
+          onAttach();
+          inputRef.current?.click();
+        }}
+        aria-label={t("attachFile")}
       >
         <Paperclip size={17} />
       </button>
@@ -1464,7 +2244,13 @@ function CommandBar({
 }
 
 type PreferencesPanelProps = {
+  backend: BackendConnectionState;
+  capabilities: PrinterCapabilities;
   chat: PrintChat;
+  jobs: PrintJob[];
+  jobsError: string;
+  jobsLoading: boolean;
+  optionsError: string;
   status: PrinterStatus;
   profiles: PrinterProfile[];
   selectedProfileId: string;
@@ -1472,9 +2258,14 @@ type PreferencesPanelProps = {
   t: Translator;
   canPrint: boolean;
   disabledReason: string;
+  unsupportedSelectedSettings: string[];
   canEditSettings: boolean;
+  isPrinting: boolean;
   isOpen: boolean;
   onClose: () => void;
+  onCancelJob: (jobId: number) => void;
+  onRefreshBackend: () => void;
+  onRefreshJobs: () => void;
   onSettingChange: <Key extends SettingsKey>(
     key: Key,
     value: PrintSettings[Key],
@@ -1486,7 +2277,13 @@ type PreferencesPanelProps = {
 };
 
 function PreferencesPanel({
+  backend,
+  capabilities,
   chat,
+  jobs,
+  jobsError,
+  jobsLoading,
+  optionsError,
   status,
   profiles,
   selectedProfileId,
@@ -1494,9 +2291,14 @@ function PreferencesPanel({
   t,
   canPrint,
   disabledReason,
+  unsupportedSelectedSettings,
   canEditSettings,
+  isPrinting,
   isOpen,
   onClose,
+  onCancelJob,
+  onRefreshBackend,
+  onRefreshJobs,
   onSettingChange,
   onProfileChange,
   onPreview,
@@ -1504,6 +2306,46 @@ function PreferencesPanel({
   onPrint,
 }: PreferencesPanelProps) {
   const settings = chat.settings;
+  const canEditPaper = canEditSettings && capabilities.paperSizes.supported;
+  const canEditOrientation = canEditSettings && capabilities.orientation.supported;
+  const canEditDuplex = canEditSettings && capabilities.duplexModes.supported;
+  const canEditQuality = canEditSettings && capabilities.quality.supported;
+  const canEditColor = canEditSettings && capabilities.colorModes.supported;
+  const canEditFit = canEditSettings && capabilities.fitToPage.supported;
+  const canEditCollate = canEditSettings && capabilities.collate.supported;
+  const canEditMedia = canEditSettings && capabilities.mediaTypes.supported;
+  const paperChoices = Array.from(
+    new Set([settings.paperSize, ...capabilities.paperSizes.choices]),
+  ).filter(Boolean);
+  const orientationChoices = Array.from(
+    new Set([settings.orientation, ...capabilities.orientation.choices]),
+  ).filter(
+    (choice): choice is PrintSettings["orientation"] =>
+      choice === "portrait" || choice === "landscape",
+  );
+  const duplexChoices = Array.from(
+    new Set([settings.duplex, ...capabilities.duplexModes.choices]),
+  ).filter(
+    (choice): choice is PrintSettings["duplex"] =>
+      choice === "none" || choice === "long-edge" || choice === "short-edge",
+  );
+  const qualityChoices = Array.from(
+    new Set([settings.quality, ...capabilities.quality.choices]),
+  ).filter(
+    (choice): choice is PrintSettings["quality"] =>
+      choice === "draft" || choice === "normal" || choice === "high",
+  );
+  const mediaChoices = Array.from(
+    new Set([settings.mediaType ?? "plain", ...capabilities.mediaTypes.choices]),
+  ).filter(Boolean);
+  const canUseColor =
+    canEditColor &&
+    (capabilities.colorModes.choices.length === 0 ||
+      capabilities.colorModes.choices.includes("color"));
+  const canUseGrayscale =
+    canEditColor &&
+    (capabilities.colorModes.choices.length === 0 ||
+      capabilities.colorModes.choices.includes("monochrome"));
 
   return (
     <aside className={`preferencesPanel ${isOpen ? "isOpen" : ""}`}>
@@ -1514,12 +2356,23 @@ function PreferencesPanel({
       </div>
 
       <div className="preferencesHeader">
-        <h2>{t("settingsTitle")}</h2>
-        <p>
-          {chat.file
-            ? formatShortDate(chat.updatedAt, getLocale(language))
-            : t("waitingForUpload")}
-        </p>
+        <div>
+          <h2>{t("settingsTitle")}</h2>
+          <p>
+            {chat.file
+              ? formatShortDate(chat.updatedAt, getLocale(language))
+              : t("waitingForUpload")}
+          </p>
+        </div>
+        <button
+          className="iconButton"
+          type="button"
+          onClick={onRefreshBackend}
+          aria-label={t("refreshStatus")}
+          disabled={backend.isLoading}
+        >
+          <RefreshCw size={15} />
+        </button>
       </div>
 
       <div className="settingsStack">
@@ -1561,7 +2414,7 @@ function PreferencesPanel({
               type="button"
               className={settings.colorMode === "color" ? "isSelected" : ""}
               aria-pressed={settings.colorMode === "color"}
-              disabled={!canEditSettings}
+              disabled={!canUseColor}
               onClick={() => onSettingChange("colorMode", "color")}
             >
               {t("color")}
@@ -1570,12 +2423,15 @@ function PreferencesPanel({
               type="button"
               className={settings.colorMode === "grayscale" ? "isSelected" : ""}
               aria-pressed={settings.colorMode === "grayscale"}
-              disabled={!canEditSettings}
+              disabled={!canUseGrayscale}
               onClick={() => onSettingChange("colorMode", "grayscale")}
             >
               {t("grayscale")}
             </button>
           </div>
+          {!capabilities.colorModes.supported ? (
+            <p className="settingHint">{capabilities.colorModes.notes ?? t("unsupportedOption")}</p>
+          ) : null}
         </section>
 
         <section className="settingsGroup">
@@ -1584,19 +2440,21 @@ function PreferencesPanel({
             <span>{t("paperSize")}</span>
             <select
               value={settings.paperSize}
-              disabled={!canEditSettings}
+              disabled={!canEditPaper}
               onChange={(event) => onSettingChange("paperSize", event.target.value)}
             >
-              <option>A4</option>
-              <option>A5</option>
-              <option>Letter</option>
+              {paperChoices.map((choice) => (
+                <option key={choice} value={choice}>
+                  {choice}
+                </option>
+              ))}
             </select>
           </label>
           <label className="field">
             <span>{t("orientation")}</span>
             <select
               value={settings.orientation}
-              disabled={!canEditSettings}
+              disabled={!canEditOrientation}
               onChange={(event) =>
                 onSettingChange(
                   "orientation",
@@ -1604,15 +2462,18 @@ function PreferencesPanel({
                 )
               }
             >
-              <option value="portrait">{t("option.portrait")}</option>
-              <option value="landscape">{t("option.landscape")}</option>
+              {orientationChoices.map((choice) => (
+                <option key={choice} value={choice}>
+                  {choice === "portrait" ? t("option.portrait") : t("option.landscape")}
+                </option>
+              ))}
             </select>
           </label>
           <label className="field">
             <span>{t("duplex")}</span>
             <select
               value={settings.duplex}
-              disabled={!canEditSettings}
+              disabled={!canEditDuplex}
               onChange={(event) =>
                 onSettingChange(
                   "duplex",
@@ -1620,20 +2481,29 @@ function PreferencesPanel({
                 )
               }
             >
-              <option value="none">{t("duplex.none")}</option>
-              <option value="long-edge">{t("duplex.longEdge")}</option>
-              <option value="short-edge">{t("duplex.shortEdge")}</option>
+              {duplexChoices.map((choice) => (
+                <option key={choice} value={choice}>
+                  {choice === "none"
+                    ? t("duplex.none")
+                    : choice === "long-edge"
+                      ? t("duplex.longEdge")
+                      : t("duplex.shortEdge")}
+                </option>
+              ))}
             </select>
           </label>
           <label className="checkboxField">
             <input
               type="checkbox"
               checked={settings.fitToPage}
-              disabled={!canEditSettings}
+              disabled={!canEditFit}
               onChange={(event) => onSettingChange("fitToPage", event.target.checked)}
             />
             <span>{t("fitToPage")}</span>
           </label>
+          {[capabilities.paperSizes, capabilities.orientation, capabilities.duplexModes, capabilities.fitToPage].some((capability) => !capability.supported) ? (
+            <p className="settingHint">{t("unsupportedOption")}</p>
+          ) : null}
         </section>
 
         <section className="settingsGroup">
@@ -1642,16 +2512,25 @@ function PreferencesPanel({
             <span>{t("outputQuality")}</span>
             <select
               value={settings.quality}
-              disabled={!canEditSettings}
+              disabled={!canEditQuality}
               onChange={(event) =>
                 onSettingChange("quality", event.target.value as PrintSettings["quality"])
               }
             >
-              <option value="draft">{t("option.draft")}</option>
-              <option value="normal">{t("option.normal")}</option>
-              <option value="high">{t("option.high")}</option>
+              {qualityChoices.map((choice) => (
+                <option key={choice} value={choice}>
+                  {choice === "draft"
+                    ? t("option.draft")
+                    : choice === "normal"
+                      ? t("option.normal")
+                      : t("option.high")}
+                </option>
+              ))}
             </select>
           </label>
+          {!capabilities.quality.supported ? (
+            <p className="settingHint">{capabilities.quality.notes ?? t("unsupportedOption")}</p>
+          ) : null}
         </section>
 
         <section className="settingsGroup settingsGroup-last">
@@ -1669,6 +2548,37 @@ function PreferencesPanel({
               ))}
             </select>
           </label>
+          <label className="field">
+            <span>{t("mediaType")}</span>
+            <select
+              value={settings.mediaType ?? "plain"}
+              disabled={!canEditMedia}
+              onChange={(event) => onSettingChange("mediaType", event.target.value)}
+            >
+              {mediaChoices.map((choice) => (
+                <option key={choice} value={choice}>
+                  {choice}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="checkboxField">
+            <input
+              type="checkbox"
+              checked={settings.collate ?? true}
+              disabled={!canEditCollate}
+              onChange={(event) => onSettingChange("collate", event.target.checked)}
+            />
+            <span>{t("collate")}</span>
+          </label>
+          {optionsError ? <p className="settingHint">{optionsError}</p> : null}
+          {unsupportedSelectedSettings.length > 0 ? (
+            <p className="settingHint">
+              {t("unsupportedSelectedSettings", {
+                settings: unsupportedSelectedSettings.join(", "),
+              })}
+            </p>
+          ) : null}
           <div className="printPlan">
             <p>{t("currentPlan")}</p>
             <strong>
@@ -1693,7 +2603,7 @@ function PreferencesPanel({
       <div className="preferenceActions">
         <button className="primaryPrintButton" type="button" disabled={!canPrint} onClick={onPrint}>
           <Printer size={17} />
-          {canPrint ? t("print") : disabledReason}
+          {isPrinting ? t("printing") : canPrint ? t("print") : disabledReason}
         </button>
         <div className="secondaryActions">
           <button type="button" onClick={onPreview}>
@@ -1709,6 +2619,43 @@ function PreferencesPanel({
           {t("printerStatus", { status: getStatusLabel(status, t) })}
         </p>
       </div>
+      <section className="jobsPanel" aria-label={t("jobs")}>
+        <div className="jobsHeader">
+          <h3>{t("jobs")}</h3>
+          <button
+            className="iconButton"
+            type="button"
+            onClick={onRefreshJobs}
+            disabled={jobsLoading}
+            aria-label={t("refreshJobs")}
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+        {jobsError ? <p className="settingHint">{jobsError}</p> : null}
+        {!jobsError && jobs.length === 0 ? <p className="settingHint">{t("noJobs")}</p> : null}
+        {jobs.length ? (
+          <ol className="jobsList">
+            {jobs.slice(0, 5).map((job) => (
+              <li key={job.id}>
+                <div>
+                  <strong>{job.name ?? `Job #${job.id}`}</strong>
+                  <span>{job.state ?? t("unknown")}</span>
+                </div>
+                <button
+                  className="iconButton"
+                  type="button"
+                  onClick={() => onCancelJob(job.id)}
+                  aria-label={t("cancelJob", { jobId: job.id })}
+                  disabled={job.state === "completed" || job.state === "canceled"}
+                >
+                  <Ban size={14} />
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </section>
     </aside>
   );
 }
