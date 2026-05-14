@@ -52,26 +52,26 @@ export type PrinterStatusDto = {
 
 export type OptionBlockDto = {
   api_name: string;
-  choices: string[];
+  choices?: string[];
   mapping?: Record<string, string>;
   notes?: string;
   raw_option: string | null;
   raw_options?: string[];
   recommended_mapping?: Record<string, string | null>;
-  supported: boolean;
+  supported?: boolean;
 };
 
 export type PrinterOptionsResponseDto = {
-  collate: OptionBlockDto;
-  color_modes: OptionBlockDto;
+  collate?: OptionBlockDto;
+  color_modes?: OptionBlockDto;
   debug?: Record<string, unknown>;
-  duplex_modes: OptionBlockDto;
-  fit_to_page: OptionBlockDto;
-  media_types: OptionBlockDto;
-  orientation: OptionBlockDto;
-  paper_sizes: OptionBlockDto;
-  quality: OptionBlockDto;
-  queue: string;
+  duplex_modes?: OptionBlockDto;
+  fit_to_page?: OptionBlockDto;
+  media_types?: OptionBlockDto;
+  orientation?: OptionBlockDto;
+  paper_sizes?: OptionBlockDto;
+  quality?: OptionBlockDto;
+  queue?: string;
 };
 
 export type FileUploadResponseDto = {
