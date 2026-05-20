@@ -2448,18 +2448,18 @@ function FilePreview({
   });
   const currentPage = preview?.currentPage ?? 1;
   const availablePages = preview?.pages ?? [];
-  const hasMaterializedRange =
-    parsedPageRange.kind === "valid" && parsedPageRange.pages.length > 0;
+  const materializedPageRange =
+    parsedPageRange.kind === "invalid" ? [] : parsedPageRange.pages;
   const filteredPages =
-    hasMaterializedRange
-      ? availablePages.filter((page) => parsedPageRange.pages.includes(page.page))
+    materializedPageRange.length > 0
+      ? availablePages.filter((page) => materializedPageRange.includes(page.page))
       : availablePages;
   const navigationPages =
     parsedPageRange.kind === "invalid"
       ? availablePages.map((page) => page.page)
-      : filteredPages.length
-        ? filteredPages.map((page) => page.page)
-        : parsedPageRange.pages;
+      : materializedPageRange.length > 0
+        ? materializedPageRange
+        : availablePages.map((page) => page.page);
   const activePage =
     navigationPages.includes(currentPage) || navigationPages.length === 0
       ? currentPage
@@ -2469,10 +2469,11 @@ function FilePreview({
     availablePages.find((page) => page.page === activePage)?.url ??
     file.previewUrl;
   const selectedPreviewCount =
-    hasMaterializedRange
-      ? parsedPageRange.pages.length
+    materializedPageRange.length > 0
+      ? materializedPageRange.length
       : pageCount ?? availablePages.length;
-  const hasFilteredRange = hasMaterializedRange;
+  const hasFilteredRange =
+    parsedPageRange.kind === "valid" && materializedPageRange.length > 0;
 
   useEffect(() => {
     if (
