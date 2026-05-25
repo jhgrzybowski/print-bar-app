@@ -81,6 +81,8 @@ const previewSizeStorageKey = "print-bar-preview-size";
 const MAX_COPIES = 99;
 const MIN_COPIES = 1;
 const MAX_MATERIALIZED_PAGE_RANGE = 5000;
+const appQualityChoices: PrintSettings["quality"][] = ["draft", "normal", "high"];
+const fitToPageEnabledValues = new Set(["true", "on", "yes", "fit", "fit-to-page", "shrink"]);
 
 type PreviewSize = "compact" | "large";
 
@@ -929,10 +931,14 @@ const getErrorMessage = (error: unknown) => {
 const mapSettingsToPrintRequest = (
   fileId: string,
   settings: PrintSettings,
+  capabilities: PrinterCapabilities,
 ): PrintRequestDto => ({
   file_id: fileId,
   options: {
-    collate: settings.collate,
+    collate:
+      settings.copies > 1 && isCapabilitySupported(capabilities.collate)
+        ? settings.collate ?? true
+        : undefined,
     color_mode: settings.colorMode === "grayscale" ? "monochrome" : "color",
     copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, settings.copies)),
     duplex: settings.duplex,
@@ -959,13 +965,63 @@ const getCapabilityHint = (
   t: Translator,
 ) => formatSafeNotice(capability.notes ?? "", t(fallbackKey));
 
+const hasMappedChoice = (
+  capability: PrinterOptionCapability,
+  value: string,
+): boolean =>
+  capability.mapping[value] !== undefined ||
+  capability.recommendedMapping[value] != null;
+
 const isSupportedChoice = (
   capability: PrinterOptionCapability,
   value: string,
-) =>
-  !isCapabilitySupported(capability) ||
-  getCapabilityChoices(capability).length === 0 ||
-  getCapabilityChoices(capability).includes(value);
+) => {
+  if (!isCapabilitySupported(capability)) {
+    return false;
+  }
+
+  const choices = getCapabilityChoices(capability);
+
+  return choices.length === 0 || choices.includes(value) || hasMappedChoice(capability, value);
+};
+
+const isSupportedQualityChoice = (
+  capability: PrinterOptionCapability,
+  value: PrintSettings["quality"],
+) => isSupportedChoice(capability, value);
+
+const isSupportedFitToPageChoice = (
+  capability: PrinterOptionCapability,
+  value: boolean,
+) => {
+  if (!value) {
+    return true;
+  }
+
+  if (!isCapabilitySupported(capability)) {
+    return false;
+  }
+
+  const choices = getCapabilityChoices(capability);
+
+  return (
+    choices.length === 0 ||
+    hasMappedChoice(capability, "true") ||
+    choices.some((choice) => fitToPageEnabledValues.has(choice.trim().toLowerCase()))
+  );
+};
+
+const isSupportedCollateChoice = (
+  capability: PrinterOptionCapability,
+  value: boolean,
+  copies: number,
+) => {
+  if (!value || copies <= 1) {
+    return true;
+  }
+
+  return isSupportedChoice(capability, "true");
+};
 
 const getUnsupportedSelectedSettings = (
   settings: PrintSettings,
@@ -1002,15 +1058,15 @@ const getUnsupportedSelectedSettings = (
     unsupportedSelections.push(`${t("duplex")}: ${duplexLabel}`);
   }
 
-  if (!isSupportedChoice(capabilities.quality, settings.quality)) {
+  if (!isSupportedQualityChoice(capabilities.quality, settings.quality)) {
     unsupportedSelections.push(`${t("quality")}: ${formatQuality(settings.quality, t)}`);
   }
 
-  if (!isSupportedChoice(capabilities.fitToPage, String(settings.fitToPage))) {
+  if (!isSupportedFitToPageChoice(capabilities.fitToPage, settings.fitToPage)) {
     unsupportedSelections.push(`${t("fitToPage")}: ${formatToggleValue(settings.fitToPage, t)}`);
   }
 
-  if (!isSupportedChoice(capabilities.collate, String(settings.collate ?? true))) {
+  if (!isSupportedCollateChoice(capabilities.collate, settings.collate ?? true, settings.copies)) {
     unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(settings.collate ?? true, t)}`);
   }
 
@@ -1667,7 +1723,7 @@ function App() {
 
     try {
       const response = await api.print(
-        mapSettingsToPrintRequest(file.id, selectedChat.settings),
+        mapSettingsToPrintRequest(file.id, selectedChat.settings, capabilities),
       );
 
       updateChatById(chatId, (chat) => ({
@@ -2929,7 +2985,13 @@ function PreferencesPanel({
       choice === "none" || choice === "long-edge" || choice === "short-edge",
   );
   const qualityChoices = Array.from(
-    new Set([settings.quality, ...qualityCapabilityChoices]),
+    new Set([
+      settings.quality,
+      ...appQualityChoices.filter((choice) =>
+        isSupportedQualityChoice(capabilities.quality, choice),
+      ),
+      ...qualityCapabilityChoices,
+    ]),
   ).filter(
     (choice): choice is PrintSettings["quality"] =>
       choice === "draft" || choice === "normal" || choice === "high",
