@@ -938,6 +938,12 @@ const getDefaultMediaType = (capabilities: PrinterCapabilities): string =>
   capabilities.mediaTypes.choices.find((choice) => choice.toLowerCase() === "plain") ??
   "plain";
 
+const getEffectiveCollate = (
+  settings: PrintSettings,
+  capabilities: PrinterCapabilities,
+): boolean =>
+  isCapabilitySupported(capabilities.collate) ? settings.collate ?? true : false;
+
 const mapSettingsToPrintRequest = (
   fileId: string,
   settings: PrintSettings,
@@ -947,7 +953,7 @@ const mapSettingsToPrintRequest = (
   options: {
     collate:
       settings.copies > 1 && isCapabilitySupported(capabilities.collate)
-        ? settings.collate ?? true
+        ? getEffectiveCollate(settings, capabilities)
         : undefined,
     color_mode: settings.colorMode === "grayscale" ? "monochrome" : "color",
     copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, settings.copies)),
@@ -1076,8 +1082,10 @@ const getUnsupportedSelectedSettings = (
     unsupportedSelections.push(`${t("fitToPage")}: ${formatToggleValue(settings.fitToPage, t)}`);
   }
 
-  if (!isSupportedCollateChoice(capabilities.collate, settings.collate ?? true, settings.copies)) {
-    unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(settings.collate ?? true, t)}`);
+  const collate = getEffectiveCollate(settings, capabilities);
+
+  if (!isSupportedCollateChoice(capabilities.collate, collate, settings.copies)) {
+    unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(collate, t)}`);
   }
 
   const mediaType = settings.mediaType ?? getDefaultMediaType(capabilities);
@@ -2981,6 +2989,7 @@ function PreferencesPanel({
   const colorCapabilityChoices = getCapabilityChoices(capabilities.colorModes);
   const mediaCapabilityChoices = getCapabilityChoices(capabilities.mediaTypes);
   const mediaType = settings.mediaType ?? getDefaultMediaType(capabilities);
+  const collate = getEffectiveCollate(settings, capabilities);
   const canEditPaper = canEditSettings && isCapabilitySupported(capabilities.paperSizes);
   const canEditOrientation = canEditSettings && isCapabilitySupported(capabilities.orientation);
   const canEditDuplex = canEditSettings && isCapabilitySupported(capabilities.duplexModes);
@@ -3246,7 +3255,7 @@ function PreferencesPanel({
           <label className="checkboxField">
             <input
               type="checkbox"
-              checked={settings.collate ?? true}
+              checked={collate}
               disabled={!canEditCollate}
               onChange={(event) => onSettingChange("collate", event.target.checked)}
             />
