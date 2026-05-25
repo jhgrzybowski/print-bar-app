@@ -1103,18 +1103,17 @@ const getActionablePrintWarnings = (warnings: string[]): string[] =>
       !nonActionableBackendWarningPatterns.some((pattern) => pattern.test(warning)),
   );
 
-const formatAppliedOptions = (response: PrintResponseDto) => {
-  const count = Object.keys(response.applied_options).length;
+const formatPrintSubmissionSummary = (response: PrintResponseDto) => {
   const unsupported = response.unsupported_options.length;
   const warnings = getActionablePrintWarnings(response.warnings).length;
-  const details = [`${count} backend option${count === 1 ? "" : "s"} applied`];
+  const details = ["Settings accepted"];
 
   if (unsupported) {
-    details.push(`${unsupported} unsupported`);
+    details.push(`${unsupported} setting${unsupported === 1 ? "" : "s"} need attention`);
   }
 
   if (warnings) {
-    details.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+    details.push(`${warnings} note${warnings === 1 ? "" : "s"}`);
   }
 
   return details.join(", ");
@@ -1760,9 +1759,10 @@ function App() {
           makeAction(
             "print_submitted",
             "Print submitted",
-            `${response.submitted_filename} sent to ${response.queue} as job #${response.job_id}. ${formatAppliedOptions(response)}.`,
+            `${response.submitted_filename} was sent to ${response.queue}. ${formatPrintSubmissionSummary(response)}.`,
             {
               appliedOptions: response.applied_options,
+              jobId: response.job_id,
               unsupportedOptions: response.unsupported_options,
               warnings: response.warnings,
             },
@@ -1771,11 +1771,11 @@ function App() {
             ? [
                 makeAction(
                   "warning",
-                  "Backend guidance",
+                  "Printer guidance",
                   [
                     ...actionableWarnings,
                     ...response.unsupported_options.map(
-                      (option) => `${option} is not supported by this printer.`,
+                      (option) => `${option} is not available for this printer.`,
                     ),
                   ].join(" "),
                 ),
@@ -1837,7 +1837,7 @@ function App() {
           ...chat,
           actions: [
             ...chat.actions,
-            makeAction("print_cancelled", `Job #${jobId} cancelled`, message),
+            makeAction("print_cancelled", "Print cancelled", message),
           ],
           updatedAt: new Date().toISOString(),
         }));
@@ -1849,7 +1849,7 @@ function App() {
         ...chat,
         actions: [
           ...chat.actions,
-          makeAction("error", `Could not cancel job #${jobId}`, getErrorMessage(error)),
+          makeAction("error", "Could not cancel print", getErrorMessage(error)),
         ],
         updatedAt: new Date().toISOString(),
       }));
