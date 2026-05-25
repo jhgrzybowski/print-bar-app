@@ -83,6 +83,11 @@ const MIN_COPIES = 1;
 const MAX_MATERIALIZED_PAGE_RANGE = 5000;
 const appQualityChoices: PrintSettings["quality"][] = ["draft", "normal", "high"];
 const fitToPageEnabledValues = new Set(["true", "on", "yes", "fit", "fit-to-page", "shrink"]);
+const nonActionableBackendWarningPatterns = [
+  /^Mapped .+ through detected /i,
+  /^Printed pages preserve /i,
+  /^Ignored collate because copies=1$/i,
+];
 
 type PreviewSize = "compact" | "large";
 
@@ -928,6 +933,11 @@ const getErrorMessage = (error: unknown) => {
   return "Unexpected printer backend error.";
 };
 
+const getDefaultMediaType = (capabilities: PrinterCapabilities): string =>
+  capabilities.mediaTypes.mapping.plain ??
+  capabilities.mediaTypes.choices.find((choice) => choice.toLowerCase() === "plain") ??
+  "plain";
+
 const mapSettingsToPrintRequest = (
   fileId: string,
   settings: PrintSettings,
@@ -943,7 +953,7 @@ const mapSettingsToPrintRequest = (
     copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, settings.copies)),
     duplex: settings.duplex,
     fit_to_page: settings.fitToPage,
-    media_type: settings.mediaType,
+    media_type: settings.mediaType ?? getDefaultMediaType(capabilities),
     orientation: settings.orientation,
     pages: settings.pageRange === "all" ? null : settings.pageRange,
     paper_size: settings.paperSize,
@@ -1070,17 +1080,25 @@ const getUnsupportedSelectedSettings = (
     unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(settings.collate ?? true, t)}`);
   }
 
-  if (!isSupportedChoice(capabilities.mediaTypes, settings.mediaType ?? "plain")) {
-    unsupportedSelections.push(`${t("mediaType")}: ${settings.mediaType ?? "plain"}`);
+  const mediaType = settings.mediaType ?? getDefaultMediaType(capabilities);
+
+  if (!isSupportedChoice(capabilities.mediaTypes, mediaType)) {
+    unsupportedSelections.push(`${t("mediaType")}: ${mediaType}`);
   }
 
   return unsupportedSelections;
 };
 
+const getActionablePrintWarnings = (warnings: string[]): string[] =>
+  warnings.filter(
+    (warning) =>
+      !nonActionableBackendWarningPatterns.some((pattern) => pattern.test(warning)),
+  );
+
 const formatAppliedOptions = (response: PrintResponseDto) => {
   const count = Object.keys(response.applied_options).length;
   const unsupported = response.unsupported_options.length;
-  const warnings = response.warnings.length;
+  const warnings = getActionablePrintWarnings(response.warnings).length;
   const details = [`${count} backend option${count === 1 ? "" : "s"} applied`];
 
   if (unsupported) {
@@ -1725,6 +1743,7 @@ function App() {
       const response = await api.print(
         mapSettingsToPrintRequest(file.id, selectedChat.settings, capabilities),
       );
+      const actionableWarnings = getActionablePrintWarnings(response.warnings);
 
       updateChatById(chatId, (chat) => ({
         ...chat,
@@ -1740,13 +1759,13 @@ function App() {
               warnings: response.warnings,
             },
           ),
-          ...(response.unsupported_options.length || response.warnings.length
+          ...(response.unsupported_options.length || actionableWarnings.length
             ? [
                 makeAction(
                   "warning",
                   "Backend guidance",
                   [
-                    ...response.warnings,
+                    ...actionableWarnings,
                     ...response.unsupported_options.map(
                       (option) => `${option} is not supported by this printer.`,
                     ),
@@ -2961,6 +2980,7 @@ function PreferencesPanel({
   const qualityCapabilityChoices = getCapabilityChoices(capabilities.quality);
   const colorCapabilityChoices = getCapabilityChoices(capabilities.colorModes);
   const mediaCapabilityChoices = getCapabilityChoices(capabilities.mediaTypes);
+  const mediaType = settings.mediaType ?? getDefaultMediaType(capabilities);
   const canEditPaper = canEditSettings && isCapabilitySupported(capabilities.paperSizes);
   const canEditOrientation = canEditSettings && isCapabilitySupported(capabilities.orientation);
   const canEditDuplex = canEditSettings && isCapabilitySupported(capabilities.duplexModes);
@@ -2997,7 +3017,7 @@ function PreferencesPanel({
       choice === "draft" || choice === "normal" || choice === "high",
   );
   const mediaChoices = Array.from(
-    new Set([settings.mediaType ?? "plain", ...mediaCapabilityChoices]),
+    new Set([mediaType, ...Object.values(capabilities.mediaTypes.mapping), ...mediaCapabilityChoices]),
   ).filter(Boolean);
   const canUseColor =
     canEditColor &&
@@ -3212,7 +3232,7 @@ function PreferencesPanel({
           <label className="field">
             <span>{t("mediaType")}</span>
             <select
-              value={settings.mediaType ?? "plain"}
+              value={mediaType}
               disabled={!canEditMedia}
               onChange={(event) => onSettingChange("mediaType", event.target.value)}
             >
