@@ -2982,6 +2982,7 @@ function PreferencesPanel({
   onPrint,
 }: PreferencesPanelProps) {
   const settings = chat.settings;
+  const [copiesInput, setCopiesInput] = useState(String(settings.copies));
   const paperCapabilityChoices = getCapabilityChoices(capabilities.paperSizes);
   const orientationCapabilityChoices = getCapabilityChoices(capabilities.orientation);
   const duplexCapabilityChoices = getCapabilityChoices(capabilities.duplexModes);
@@ -3037,6 +3038,10 @@ function PreferencesPanel({
     (colorCapabilityChoices.length === 0 ||
       colorCapabilityChoices.includes("monochrome"));
 
+  useEffect(() => {
+    setCopiesInput(String(settings.copies));
+  }, [settings.copies]);
+
   return (
     <aside className={`preferencesPanel ${isOpen ? "isOpen" : ""}`}>
       <div className="mobilePanelHeader">
@@ -3073,17 +3078,33 @@ function PreferencesPanel({
             <input
               min={1}
               max={99}
+              inputMode="numeric"
               type="number"
-              value={settings.copies}
+              value={copiesInput}
               disabled={!canEditSettings}
-              onChange={(event) =>
+              onBlur={() => {
+                if (!copiesInput.trim()) {
+                  setCopiesInput(String(settings.copies || 1));
+                }
+              }}
+              onChange={(event) => {
+                const rawValue = event.target.value;
+                setCopiesInput(rawValue);
+
+                if (!rawValue.trim()) {
+                  return;
+                }
+
                 onSettingChange(
                   "copies",
-                  Math.max(1, Number(event.target.value) || 1),
-                )
-              }
+                  Math.max(1, Math.min(99, Number(rawValue) || 1)),
+                );
+              }}
             />
           </label>
+          {!copiesInput.trim() ? (
+            <p className="settingHint">{t("copies.empty")}</p>
+          ) : null}
           <label className="field">
             <span>{t("pageRange")}</span>
             <input
