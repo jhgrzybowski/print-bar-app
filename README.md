@@ -56,6 +56,32 @@ Build for production:
 npm run build
 ```
 
+## Docker Deployment
+
+The production Docker deployment builds the app with:
+
+```bash
+VITE_PRINTER_API_BASE_URL=/api
+```
+
+Nginx serves the static frontend and reverse proxies `/api/*` to
+`http://local-printer-api:8000` inside the Docker network. This keeps Docker
+service DNS out of the browser and avoids production CORS issues.
+
+Quick start:
+
+```bash
+docker compose up -d --build
+```
+
+Then open:
+
+```text
+http://192.168.100.99:8080
+```
+
+Full deployment and verification details are in `DEPLOYMENT_DOCKER.md`.
+
 ## Backend
 
 This app expects `local_printer_api` to be running and reachable from the

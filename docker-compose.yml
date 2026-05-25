@@ -1,0 +1,49 @@
+services:
+  print-bar-app:
+    build:
+      context: .
+      args:
+        VITE_PRINTER_API_BASE_URL: /api
+    image: print-bar-app:latest
+    depends_on:
+      local-printer-api:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  local-printer-api:
+    image: local-printer-api:latest
+    expose:
+      - "8000"
+    environment:
+      QUEUE_NAME: Canon_MG5350
+      PRINTER_IP: 192.168.100.100
+      BACKEND_HOST: 192.168.100.99
+      BACKEND_PORT: "8000"
+      TMP_DIR: /var/tmp/printer-backend
+      MAX_UPLOAD_MB: "50"
+      PREVIEW_DPI: "110"
+    volumes:
+      - /run/cups/cups.sock:/run/cups/cups.sock
+      - printer-backend-tmp:/var/tmp/printer-backend
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  printer-backend-tmp:
