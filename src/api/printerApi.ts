@@ -153,6 +153,8 @@ export const getPrinterApiBaseUrl = () =>
     import.meta.env.VITE_PRINTER_API_BASE_URL || "http://localhost:8000",
   );
 
+const isAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value);
+
 const detailToMessage = (detail: unknown) => {
   if (typeof detail === "string") {
     return detail;
@@ -205,10 +207,19 @@ const normalizeUnknownError = (error: unknown): PrinterApiError => {
 export const createPrinterApi = (config: PrinterApiConfig) => {
   const baseUrl = trimTrailingSlash(config.baseUrl);
 
-  const buildUrl = (path: string) =>
-    path.startsWith("http")
-      ? path
-      : `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  const buildUrl = (path: string) => {
+    if (isAbsoluteUrl(path)) {
+      return path;
+    }
+
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+    if (!baseUrl) {
+      return normalizedPath;
+    }
+
+    return `${baseUrl}${normalizedPath}`;
+  };
 
   const requestJson = async <ResponseBody>(
     path: string,
@@ -264,10 +275,17 @@ export const createPrinterApi = (config: PrinterApiConfig) => {
       requestJson<CancelJobResponseDto>(`/jobs/${jobId}`, {
         method: "DELETE",
       }),
+    forgetJob: (jobId: number | string) =>
+      requestJson<CancelJobResponseDto>(`/jobs/${jobId}/forget`, {
+        method: "POST",
+      }),
     health: () => requestJson<HealthResponseDto>("/health"),
     job: (jobId: number | string) =>
       requestJson<JobInfoDto>(`/jobs/${jobId}`),
-    jobs: () => requestJson<JobsResponseDto>("/jobs"),
+    jobs: (scope: "active" | "completed" | "all" = "active") =>
+      requestJson<JobsResponseDto>(
+        `/jobs?${new URLSearchParams({ scope }).toString()}`,
+      ),
     options: () => requestJson<PrinterOptionsResponseDto>("/options"),
     previewFile: (fileId: string) =>
       requestJson<PreviewResponseDto>(`/files/${fileId}/preview`),
