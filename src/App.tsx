@@ -855,7 +855,7 @@ const mapOptionBlock = (
   mapping: block?.mapping ?? {},
   notes: block?.notes,
   recommendedMapping: block?.recommended_mapping ?? {},
-  supported: block?.supported ?? Boolean(block),
+  supported: block?.supported ?? true,
 });
 
 const mapCapabilities = (options: PrinterOptionsResponseDto): PrinterCapabilities => ({
