@@ -3192,7 +3192,7 @@ function PreferencesPanel({
               disabled={!canEditSettings}
               onBlur={() => {
                 if (!copiesInput.trim()) {
-                  setCopiesInput(String(settings.copies || 1));
+                  setCopiesInput("1");
                 }
               }}
               onChange={(event) => {
@@ -3200,6 +3200,7 @@ function PreferencesPanel({
                 setCopiesInput(rawValue);
 
                 if (!rawValue.trim()) {
+                  onSettingChange("copies", 1);
                   return;
                 }
 
