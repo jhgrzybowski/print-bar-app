@@ -88,6 +88,9 @@ const nonActionableBackendWarningPatterns = [
   /^Printed pages preserve /i,
   /^Ignored collate because copies=1$/i,
 ];
+const completedJobStates = new Set(["completed"]);
+const cancelledJobStates = new Set(["aborted", "canceled", "cancelled"]);
+const terminalJobStates = new Set([...completedJobStates, ...cancelledJobStates]);
 
 type PreviewSize = "compact" | "large";
 
@@ -907,6 +910,8 @@ const mapBackendStatus = (status?: PrinterStatusDto): PrinterStatus => {
 };
 
 const mapJob = (job: JobInfoDto): PrintJob => ({
+  canCancel: job.can_cancel,
+  canForget: job.can_forget,
   completedAt: job.completed_at === undefined || job.completed_at === null
     ? undefined
     : String(job.completed_at),
@@ -914,12 +919,40 @@ const mapJob = (job: JobInfoDto): PrintJob => ({
     ? undefined
     : String(job.created_at),
   id: job.job_id,
+  isActive: job.is_active,
+  isTerminal: job.is_terminal,
   name: job.name,
   queue: job.queue,
   reasons: job.reasons ?? [],
   state: job.state,
+  stateCode: job.state_code,
   user: job.user,
 });
+
+const normalizeJobState = (job: PrintJob) => job.state?.trim().toLowerCase() ?? "";
+
+const isCompletedJob = (job: PrintJob) =>
+  job.stateCode === 9 || completedJobStates.has(normalizeJobState(job));
+
+const isCancelledJob = (job: PrintJob) =>
+  cancelledJobStates.has(normalizeJobState(job));
+
+const isTerminalJob = (job: PrintJob) =>
+  job.isTerminal === true || terminalJobStates.has(normalizeJobState(job));
+
+const stripBackendPageSuffix = (value: string) =>
+  value.replace(/\s+pages?\s+[\d,\-\s]+$/i, "").trim();
+
+const getJobDisplayName = (
+  job: PrintJob,
+  printChats: PrintChat[],
+) => {
+  const matchingChat = printChats.find((chat) => chat.jobId === job.id);
+  const localName = matchingChat?.file?.name ?? matchingChat?.title;
+  const backendName = job.name ? stripBackendPageSuffix(job.name) : "";
+
+  return localName || backendName || "Print job";
+};
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof PrinterApiError) {
@@ -1262,8 +1295,64 @@ function App() {
     setJobsError("");
 
     try {
-      const response = await api.jobs();
-      setJobs(response.jobs.map(mapJob));
+      const response = await api.jobs("all");
+      const mappedJobs = response.jobs.map(mapJob);
+      const jobsById = new Map(mappedJobs.map((job) => [job.id, job]));
+
+      setJobs(mappedJobs);
+      setPrintChats((currentChats) =>
+        currentChats.map((chat) => {
+          if (!chat.jobId || chat.status !== "queued") {
+            return chat;
+          }
+
+          const job = jobsById.get(chat.jobId);
+
+          if (!job || !isTerminalJob(job)) {
+            return chat;
+          }
+
+          if (isCompletedJob(job)) {
+            const fileName = chat.file?.name ?? getJobDisplayName(job, currentChats);
+
+            return {
+              ...chat,
+              actions: [
+                ...chat.actions,
+                makeAction(
+                  "print_completed",
+                  "Print completed",
+                  `${fileName} finished printing.`,
+                  { jobId: job.id, state: job.state },
+                ),
+              ],
+              status: "printed",
+              updatedAt: new Date().toISOString(),
+            };
+          }
+
+          if (isCancelledJob(job)) {
+            const fileName = chat.file?.name ?? getJobDisplayName(job, currentChats);
+
+            return {
+              ...chat,
+              actions: [
+                ...chat.actions,
+                makeAction(
+                  "print_cancelled",
+                  "Print stopped",
+                  `${fileName} did not finish printing.`,
+                  { jobId: job.id, state: job.state },
+                ),
+              ],
+              status: "cancelled",
+              updatedAt: new Date().toISOString(),
+            };
+          }
+
+          return chat;
+        }),
+      );
     } catch (error) {
       setJobsError(getErrorMessage(error));
       setJobs([]);
@@ -1349,6 +1438,22 @@ function App() {
   useEffect(() => {
     void refreshBackendState();
   }, [refreshBackendState]);
+
+  useEffect(() => {
+    const hasQueuedPrints = printChats.some(
+      (chat) => chat.status === "queued" && chat.jobId,
+    );
+
+    if (!backendConnection.reachable || !hasQueuedPrints) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshJobs();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [backendConnection.reachable, printChats, refreshJobs]);
 
   const updateSetting = <Key extends SettingsKey>(
     key: Key,
@@ -1919,6 +2024,7 @@ function App() {
           jobs={jobs}
           jobsError={jobsError}
           jobsLoading={jobsLoading}
+          printChats={printChats}
           optionsError={optionsError}
           status={printerStatus}
           profiles={profiles}
@@ -2926,6 +3032,7 @@ type PreferencesPanelProps = {
   jobs: PrintJob[];
   jobsError: string;
   jobsLoading: boolean;
+  printChats: PrintChat[];
   optionsError: string;
   status: PrinterStatus;
   profiles: PrinterProfile[];
@@ -2959,6 +3066,7 @@ function PreferencesPanel({
   jobs,
   jobsError,
   jobsLoading,
+  printChats,
   optionsError,
   status,
   profiles,
@@ -3357,7 +3465,7 @@ function PreferencesPanel({
             {jobs.slice(0, 5).map((job) => (
               <li key={job.id}>
                 <div>
-                  <strong>{job.name ?? `Job #${job.id}`}</strong>
+                  <strong>{getJobDisplayName(job, printChats)}</strong>
                   <span>{job.state ?? t("unknown")}</span>
                 </div>
                 <button
@@ -3365,7 +3473,7 @@ function PreferencesPanel({
                   type="button"
                   onClick={() => onCancelJob(job.id)}
                   aria-label={t("cancelJob", { jobId: job.id })}
-                  disabled={job.state === "completed" || job.state === "canceled"}
+                  disabled={job.canCancel === false || isTerminalJob(job)}
                 >
                   <Ban size={14} />
                 </button>
