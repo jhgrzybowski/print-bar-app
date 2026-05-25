@@ -135,9 +135,9 @@ const en = {
   "noJobs": "No jobs in this queue.",
   "noFileSelectedYet": "No file selected yet",
   "option.high": "High",
-  "option.draft": "Draft",
+  "option.draft": "Document",
   "option.landscape": "Landscape",
-  "option.normal": "Normal",
+  "option.normal": "Photography",
   "option.portrait": "Portrait",
   "orientation": "Orientation",
   "optionsFallback":
@@ -377,9 +377,9 @@ const pl: Record<keyof typeof en, string> = {
   "noJobs": "Brak zadań w tej kolejce.",
   "noFileSelectedYet": "Nie wybrano jeszcze pliku",
   "option.high": "Wysoka",
-  "option.draft": "Robocza",
+  "option.draft": "Dokument",
   "option.landscape": "Pozioma",
-  "option.normal": "Normalna",
+  "option.normal": "Fotografia",
   "option.portrait": "Pionowa",
   "orientation": "Orientacja",
   "optionsFallback":

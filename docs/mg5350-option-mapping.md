@@ -24,8 +24,8 @@ options discovered from `/options`.
 | Duplex | None | `duplex: "none"` | `Duplex=None` | Yes | Simplex. |
 | Duplex | Long edge | `duplex: "long-edge"` | `Duplex=DuplexNoTumble` | Yes | Correct for normal portrait double-sided pages. |
 | Duplex | Short edge | `duplex: "short-edge"` | `Duplex=DuplexTumble` | Yes | Flip on short edge. |
-| Quality | Draft | `quality: "draft"` | `Resolution=300dpi` | Yes | This is what Draft means for MG5350. |
-| Quality | Normal | `quality: "normal"` | `Resolution=600dpi` | Yes | Safe/default quality. |
+| Quality | Document | `quality: "draft"` | `Resolution=300dpi` | Yes | Canon describes Draft as suitable for test printing; in this app, 300dpi is labeled for document-style output. |
+| Quality | Photography | `quality: "normal"` | `Resolution=600dpi` | Yes | Canon describes Standard as average speed and quality; in this app, 600dpi is labeled for photo-oriented output. |
 | Quality | High | `quality: "high"` | none | No | `/options.quality.recommended_mapping.high` is `null`. |
 | Fit to page | On | `fit_to_page: true` | `StpiShrinkOutput=Shrink` | Yes | Gutenprint exposes shrink/crop/expand, not a generic IPP fit option. |
 | Fit to page | Off | `fit_to_page: false` | omitted/ignored | Yes | Backend intentionally ignores false. |
