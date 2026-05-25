@@ -71,7 +71,6 @@ export const profiles: PrinterProfile[] = [
     workspaceHeaderBgColor: "oklch(0.967 0.012 358)",
     defaultSettings: {
       colorMode: "color",
-      quality: "high",
     },
   },
   {
