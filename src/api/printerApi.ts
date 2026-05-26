@@ -123,8 +123,12 @@ export type PrintResponseDto = {
 };
 
 export type JobInfoDto = {
+  can_cancel?: boolean;
+  can_forget?: boolean;
   completed_at?: number | string | null;
   created_at?: number | string | null;
+  is_active?: boolean;
+  is_terminal?: boolean;
   job_id: number;
   name?: string;
   printer_uri?: string;

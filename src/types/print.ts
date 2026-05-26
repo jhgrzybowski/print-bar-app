@@ -136,12 +136,17 @@ export type PrinterCapabilities = {
 };
 
 export type PrintJob = {
+  canCancel?: boolean;
+  canForget?: boolean;
   completedAt?: string;
   createdAt?: string;
   id: number;
+  isActive?: boolean;
+  isTerminal?: boolean;
   name?: string;
   queue?: string;
   reasons: string[];
   state?: string;
+  stateCode?: number | null;
   user?: string;
 };

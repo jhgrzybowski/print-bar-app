@@ -81,6 +81,16 @@ const previewSizeStorageKey = "print-bar-preview-size";
 const MAX_COPIES = 99;
 const MIN_COPIES = 1;
 const MAX_MATERIALIZED_PAGE_RANGE = 5000;
+const appQualityChoices: PrintSettings["quality"][] = ["draft", "normal", "high"];
+const fitToPageEnabledValues = new Set(["true", "on", "yes", "fit", "fit-to-page", "shrink"]);
+const nonActionableBackendWarningPatterns = [
+  /^Mapped .+ through detected /i,
+  /^Printed pages preserve /i,
+  /^Ignored collate because copies=1$/i,
+];
+const completedJobStates = new Set(["completed"]);
+const cancelledJobStates = new Set(["aborted", "canceled", "cancelled"]);
+const terminalJobStates = new Set([...completedJobStates, ...cancelledJobStates]);
 
 type PreviewSize = "compact" | "large";
 
@@ -845,7 +855,7 @@ const mapOptionBlock = (
   mapping: block?.mapping ?? {},
   notes: block?.notes,
   recommendedMapping: block?.recommended_mapping ?? {},
-  supported: block?.supported ?? Boolean(block),
+  supported: block?.supported ?? true,
 });
 
 const mapCapabilities = (options: PrinterOptionsResponseDto): PrinterCapabilities => ({
@@ -900,6 +910,8 @@ const mapBackendStatus = (status?: PrinterStatusDto): PrinterStatus => {
 };
 
 const mapJob = (job: JobInfoDto): PrintJob => ({
+  canCancel: job.can_cancel,
+  canForget: job.can_forget,
   completedAt: job.completed_at === undefined || job.completed_at === null
     ? undefined
     : String(job.completed_at),
@@ -907,12 +919,40 @@ const mapJob = (job: JobInfoDto): PrintJob => ({
     ? undefined
     : String(job.created_at),
   id: job.job_id,
+  isActive: job.is_active,
+  isTerminal: job.is_terminal,
   name: job.name,
   queue: job.queue,
   reasons: job.reasons ?? [],
   state: job.state,
+  stateCode: job.state_code,
   user: job.user,
 });
+
+const normalizeJobState = (job: PrintJob) => job.state?.trim().toLowerCase() ?? "";
+
+const isCompletedJob = (job: PrintJob) =>
+  job.stateCode === 9 || completedJobStates.has(normalizeJobState(job));
+
+const isCancelledJob = (job: PrintJob) =>
+  cancelledJobStates.has(normalizeJobState(job));
+
+const isTerminalJob = (job: PrintJob) =>
+  job.isTerminal === true || terminalJobStates.has(normalizeJobState(job));
+
+const stripBackendPageSuffix = (value: string) =>
+  value.replace(/\s+pages?\s+[\d,\-\s]+$/i, "").trim();
+
+const getJobDisplayName = (
+  job: PrintJob,
+  printChats: PrintChat[],
+) => {
+  const matchingChat = printChats.find((chat) => chat.jobId === job.id);
+  const localName = matchingChat?.file?.name ?? matchingChat?.title;
+  const backendName = job.name ? stripBackendPageSuffix(job.name) : "";
+
+  return localName || backendName || "Print job";
+};
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof PrinterApiError) {
@@ -926,18 +966,33 @@ const getErrorMessage = (error: unknown) => {
   return "Unexpected printer backend error.";
 };
 
+const getDefaultMediaType = (capabilities: PrinterCapabilities): string =>
+  capabilities.mediaTypes.mapping.plain ??
+  capabilities.mediaTypes.choices.find((choice) => choice.toLowerCase() === "plain") ??
+  "plain";
+
+const getEffectiveCollate = (
+  settings: PrintSettings,
+  capabilities: PrinterCapabilities,
+): boolean =>
+  isCapabilitySupported(capabilities.collate) ? settings.collate ?? true : false;
+
 const mapSettingsToPrintRequest = (
   fileId: string,
   settings: PrintSettings,
+  capabilities: PrinterCapabilities,
 ): PrintRequestDto => ({
   file_id: fileId,
   options: {
-    collate: settings.collate,
+    collate:
+      settings.copies > 1 && isCapabilitySupported(capabilities.collate)
+        ? getEffectiveCollate(settings, capabilities)
+        : undefined,
     color_mode: settings.colorMode === "grayscale" ? "monochrome" : "color",
     copies: Math.max(MIN_COPIES, Math.min(MAX_COPIES, settings.copies)),
     duplex: settings.duplex,
     fit_to_page: settings.fitToPage,
-    media_type: settings.mediaType,
+    media_type: settings.mediaType ?? getDefaultMediaType(capabilities),
     orientation: settings.orientation,
     pages: settings.pageRange === "all" ? null : settings.pageRange,
     paper_size: settings.paperSize,
@@ -959,13 +1014,63 @@ const getCapabilityHint = (
   t: Translator,
 ) => formatSafeNotice(capability.notes ?? "", t(fallbackKey));
 
+const hasMappedChoice = (
+  capability: PrinterOptionCapability,
+  value: string,
+): boolean =>
+  capability.mapping[value] !== undefined ||
+  capability.recommendedMapping[value] != null;
+
 const isSupportedChoice = (
   capability: PrinterOptionCapability,
   value: string,
-) =>
-  !isCapabilitySupported(capability) ||
-  getCapabilityChoices(capability).length === 0 ||
-  getCapabilityChoices(capability).includes(value);
+) => {
+  if (!isCapabilitySupported(capability)) {
+    return false;
+  }
+
+  const choices = getCapabilityChoices(capability);
+
+  return choices.length === 0 || choices.includes(value) || hasMappedChoice(capability, value);
+};
+
+const isSupportedQualityChoice = (
+  capability: PrinterOptionCapability,
+  value: PrintSettings["quality"],
+) => isSupportedChoice(capability, value);
+
+const isSupportedFitToPageChoice = (
+  capability: PrinterOptionCapability,
+  value: boolean,
+) => {
+  if (!value) {
+    return true;
+  }
+
+  if (!isCapabilitySupported(capability)) {
+    return false;
+  }
+
+  const choices = getCapabilityChoices(capability);
+
+  return (
+    choices.length === 0 ||
+    hasMappedChoice(capability, "true") ||
+    choices.some((choice) => fitToPageEnabledValues.has(choice.trim().toLowerCase()))
+  );
+};
+
+const isSupportedCollateChoice = (
+  capability: PrinterOptionCapability,
+  value: boolean,
+  copies: number,
+) => {
+  if (!value || copies <= 1) {
+    return true;
+  }
+
+  return isSupportedChoice(capability, "true");
+};
 
 const getUnsupportedSelectedSettings = (
   settings: PrintSettings,
@@ -1002,37 +1107,46 @@ const getUnsupportedSelectedSettings = (
     unsupportedSelections.push(`${t("duplex")}: ${duplexLabel}`);
   }
 
-  if (!isSupportedChoice(capabilities.quality, settings.quality)) {
+  if (!isSupportedQualityChoice(capabilities.quality, settings.quality)) {
     unsupportedSelections.push(`${t("quality")}: ${formatQuality(settings.quality, t)}`);
   }
 
-  if (!isSupportedChoice(capabilities.fitToPage, String(settings.fitToPage))) {
+  if (!isSupportedFitToPageChoice(capabilities.fitToPage, settings.fitToPage)) {
     unsupportedSelections.push(`${t("fitToPage")}: ${formatToggleValue(settings.fitToPage, t)}`);
   }
 
-  if (!isSupportedChoice(capabilities.collate, String(settings.collate ?? true))) {
-    unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(settings.collate ?? true, t)}`);
+  const collate = getEffectiveCollate(settings, capabilities);
+
+  if (!isSupportedCollateChoice(capabilities.collate, collate, settings.copies)) {
+    unsupportedSelections.push(`${t("collate")}: ${formatToggleValue(collate, t)}`);
   }
 
-  if (!isSupportedChoice(capabilities.mediaTypes, settings.mediaType ?? "plain")) {
-    unsupportedSelections.push(`${t("mediaType")}: ${settings.mediaType ?? "plain"}`);
+  const mediaType = settings.mediaType ?? getDefaultMediaType(capabilities);
+
+  if (!isSupportedChoice(capabilities.mediaTypes, mediaType)) {
+    unsupportedSelections.push(`${t("mediaType")}: ${mediaType}`);
   }
 
   return unsupportedSelections;
 };
 
-const formatAppliedOptions = (response: PrintResponseDto) => {
-  const count = Object.keys(response.applied_options).length;
+const getActionablePrintWarnings = (warnings: string[]): string[] =>
+  warnings.filter(
+    (warning) =>
+      !nonActionableBackendWarningPatterns.some((pattern) => pattern.test(warning)),
+  );
+
+const formatPrintSubmissionSummary = (response: PrintResponseDto) => {
   const unsupported = response.unsupported_options.length;
-  const warnings = response.warnings.length;
-  const details = [`${count} backend option${count === 1 ? "" : "s"} applied`];
+  const warnings = getActionablePrintWarnings(response.warnings).length;
+  const details = ["Settings accepted"];
 
   if (unsupported) {
-    details.push(`${unsupported} unsupported`);
+    details.push(`${unsupported} setting${unsupported === 1 ? "" : "s"} need attention`);
   }
 
   if (warnings) {
-    details.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+    details.push(`${warnings} note${warnings === 1 ? "" : "s"}`);
   }
 
   return details.join(", ");
@@ -1181,8 +1295,64 @@ function App() {
     setJobsError("");
 
     try {
-      const response = await api.jobs();
-      setJobs(response.jobs.map(mapJob));
+      const response = await api.jobs("all");
+      const mappedJobs = response.jobs.map(mapJob);
+      const jobsById = new Map(mappedJobs.map((job) => [job.id, job]));
+
+      setJobs(mappedJobs);
+      setPrintChats((currentChats) =>
+        currentChats.map((chat) => {
+          if (!chat.jobId || chat.status !== "queued") {
+            return chat;
+          }
+
+          const job = jobsById.get(chat.jobId);
+
+          if (!job || !isTerminalJob(job)) {
+            return chat;
+          }
+
+          if (isCompletedJob(job)) {
+            const fileName = chat.file?.name ?? getJobDisplayName(job, currentChats);
+
+            return {
+              ...chat,
+              actions: [
+                ...chat.actions,
+                makeAction(
+                  "print_completed",
+                  "Print completed",
+                  `${fileName} finished printing.`,
+                  { jobId: job.id, state: job.state },
+                ),
+              ],
+              status: "printed",
+              updatedAt: new Date().toISOString(),
+            };
+          }
+
+          if (isCancelledJob(job)) {
+            const fileName = chat.file?.name ?? getJobDisplayName(job, currentChats);
+
+            return {
+              ...chat,
+              actions: [
+                ...chat.actions,
+                makeAction(
+                  "print_cancelled",
+                  "Print stopped",
+                  `${fileName} did not finish printing.`,
+                  { jobId: job.id, state: job.state },
+                ),
+              ],
+              status: "cancelled",
+              updatedAt: new Date().toISOString(),
+            };
+          }
+
+          return chat;
+        }),
+      );
     } catch (error) {
       setJobsError(getErrorMessage(error));
       setJobs([]);
@@ -1268,6 +1438,22 @@ function App() {
   useEffect(() => {
     void refreshBackendState();
   }, [refreshBackendState]);
+
+  useEffect(() => {
+    const hasQueuedPrints = printChats.some(
+      (chat) => chat.status === "queued" && chat.jobId,
+    );
+
+    if (!backendConnection.reachable || !hasQueuedPrints) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshJobs();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [backendConnection.reachable, printChats, refreshJobs]);
 
   const updateSetting = <Key extends SettingsKey>(
     key: Key,
@@ -1667,8 +1853,9 @@ function App() {
 
     try {
       const response = await api.print(
-        mapSettingsToPrintRequest(file.id, selectedChat.settings),
+        mapSettingsToPrintRequest(file.id, selectedChat.settings, capabilities),
       );
+      const actionableWarnings = getActionablePrintWarnings(response.warnings);
 
       updateChatById(chatId, (chat) => ({
         ...chat,
@@ -1677,22 +1864,23 @@ function App() {
           makeAction(
             "print_submitted",
             "Print submitted",
-            `${response.submitted_filename} sent to ${response.queue} as job #${response.job_id}. ${formatAppliedOptions(response)}.`,
+            `${response.submitted_filename} was sent to ${response.queue}. ${formatPrintSubmissionSummary(response)}.`,
             {
               appliedOptions: response.applied_options,
+              jobId: response.job_id,
               unsupportedOptions: response.unsupported_options,
               warnings: response.warnings,
             },
           ),
-          ...(response.unsupported_options.length || response.warnings.length
+          ...(response.unsupported_options.length || actionableWarnings.length
             ? [
                 makeAction(
                   "warning",
-                  "Backend guidance",
+                  "Printer guidance",
                   [
-                    ...response.warnings,
+                    ...actionableWarnings,
                     ...response.unsupported_options.map(
-                      (option) => `${option} is not supported by this printer.`,
+                      (option) => `${option} is not available for this printer.`,
                     ),
                   ].join(" "),
                 ),
@@ -1754,7 +1942,7 @@ function App() {
           ...chat,
           actions: [
             ...chat.actions,
-            makeAction("print_cancelled", `Job #${jobId} cancelled`, message),
+            makeAction("print_cancelled", "Print cancelled", message),
           ],
           updatedAt: new Date().toISOString(),
         }));
@@ -1766,7 +1954,7 @@ function App() {
         ...chat,
         actions: [
           ...chat.actions,
-          makeAction("error", `Could not cancel job #${jobId}`, getErrorMessage(error)),
+          makeAction("error", "Could not cancel print", getErrorMessage(error)),
         ],
         updatedAt: new Date().toISOString(),
       }));
@@ -1836,6 +2024,7 @@ function App() {
           jobs={jobs}
           jobsError={jobsError}
           jobsLoading={jobsLoading}
+          printChats={printChats}
           optionsError={optionsError}
           status={printerStatus}
           profiles={profiles}
@@ -2843,6 +3032,7 @@ type PreferencesPanelProps = {
   jobs: PrintJob[];
   jobsError: string;
   jobsLoading: boolean;
+  printChats: PrintChat[];
   optionsError: string;
   status: PrinterStatus;
   profiles: PrinterProfile[];
@@ -2876,6 +3066,7 @@ function PreferencesPanel({
   jobs,
   jobsError,
   jobsLoading,
+  printChats,
   optionsError,
   status,
   profiles,
@@ -2899,12 +3090,15 @@ function PreferencesPanel({
   onPrint,
 }: PreferencesPanelProps) {
   const settings = chat.settings;
+  const [copiesInput, setCopiesInput] = useState(String(settings.copies));
   const paperCapabilityChoices = getCapabilityChoices(capabilities.paperSizes);
   const orientationCapabilityChoices = getCapabilityChoices(capabilities.orientation);
   const duplexCapabilityChoices = getCapabilityChoices(capabilities.duplexModes);
   const qualityCapabilityChoices = getCapabilityChoices(capabilities.quality);
   const colorCapabilityChoices = getCapabilityChoices(capabilities.colorModes);
   const mediaCapabilityChoices = getCapabilityChoices(capabilities.mediaTypes);
+  const mediaType = settings.mediaType ?? getDefaultMediaType(capabilities);
+  const collate = getEffectiveCollate(settings, capabilities);
   const canEditPaper = canEditSettings && isCapabilitySupported(capabilities.paperSizes);
   const canEditOrientation = canEditSettings && isCapabilitySupported(capabilities.orientation);
   const canEditDuplex = canEditSettings && isCapabilitySupported(capabilities.duplexModes);
@@ -2929,13 +3123,19 @@ function PreferencesPanel({
       choice === "none" || choice === "long-edge" || choice === "short-edge",
   );
   const qualityChoices = Array.from(
-    new Set([settings.quality, ...qualityCapabilityChoices]),
+    new Set([
+      settings.quality,
+      ...appQualityChoices.filter((choice) =>
+        isSupportedQualityChoice(capabilities.quality, choice),
+      ),
+      ...qualityCapabilityChoices,
+    ]),
   ).filter(
     (choice): choice is PrintSettings["quality"] =>
       choice === "draft" || choice === "normal" || choice === "high",
   );
   const mediaChoices = Array.from(
-    new Set([settings.mediaType ?? "plain", ...mediaCapabilityChoices]),
+    new Set([mediaType, ...Object.values(capabilities.mediaTypes.mapping), ...mediaCapabilityChoices]),
   ).filter(Boolean);
   const canUseColor =
     canEditColor &&
@@ -2945,6 +3145,10 @@ function PreferencesPanel({
     canEditColor &&
     (colorCapabilityChoices.length === 0 ||
       colorCapabilityChoices.includes("monochrome"));
+
+  useEffect(() => {
+    setCopiesInput(String(settings.copies));
+  }, [settings.copies]);
 
   return (
     <aside className={`preferencesPanel ${isOpen ? "isOpen" : ""}`}>
@@ -2982,17 +3186,34 @@ function PreferencesPanel({
             <input
               min={1}
               max={99}
+              inputMode="numeric"
               type="number"
-              value={settings.copies}
+              value={copiesInput}
               disabled={!canEditSettings}
-              onChange={(event) =>
+              onBlur={() => {
+                if (!copiesInput.trim()) {
+                  setCopiesInput("1");
+                }
+              }}
+              onChange={(event) => {
+                const rawValue = event.target.value;
+                setCopiesInput(rawValue);
+
+                if (!rawValue.trim()) {
+                  onSettingChange("copies", 1);
+                  return;
+                }
+
                 onSettingChange(
                   "copies",
-                  Math.max(1, Number(event.target.value) || 1),
-                )
-              }
+                  Math.max(1, Math.min(99, Number(rawValue) || 1)),
+                );
+              }}
             />
           </label>
+          {!copiesInput.trim() ? (
+            <p className="settingHint">{t("copies.empty")}</p>
+          ) : null}
           <label className="field">
             <span>{t("pageRange")}</span>
             <input
@@ -3150,7 +3371,7 @@ function PreferencesPanel({
           <label className="field">
             <span>{t("mediaType")}</span>
             <select
-              value={settings.mediaType ?? "plain"}
+              value={mediaType}
               disabled={!canEditMedia}
               onChange={(event) => onSettingChange("mediaType", event.target.value)}
             >
@@ -3164,7 +3385,7 @@ function PreferencesPanel({
           <label className="checkboxField">
             <input
               type="checkbox"
-              checked={settings.collate ?? true}
+              checked={collate}
               disabled={!canEditCollate}
               onChange={(event) => onSettingChange("collate", event.target.checked)}
             />
@@ -3245,7 +3466,7 @@ function PreferencesPanel({
             {jobs.slice(0, 5).map((job) => (
               <li key={job.id}>
                 <div>
-                  <strong>{job.name ?? `Job #${job.id}`}</strong>
+                  <strong>{getJobDisplayName(job, printChats)}</strong>
                   <span>{job.state ?? t("unknown")}</span>
                 </div>
                 <button
@@ -3253,7 +3474,7 @@ function PreferencesPanel({
                   type="button"
                   onClick={() => onCancelJob(job.id)}
                   aria-label={t("cancelJob", { jobId: job.id })}
-                  disabled={job.state === "completed" || job.state === "canceled"}
+                  disabled={job.canCancel === false || isTerminalJob(job)}
                 >
                   <Ban size={14} />
                 </button>
