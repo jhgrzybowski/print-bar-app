@@ -567,42 +567,6 @@ const isOfflinePrinterReason = (reason: string) => {
   );
 };
 
-const formatPrinterState = (state: string | undefined, t: Translator) => {
-  if (!state) {
-    return t("printerState.unknown");
-  }
-
-  const normalized = state.trim().toLowerCase();
-
-  if (normalized === "idle") return t("printerState.idle");
-  if (normalized === "processing") return t("printerState.processing");
-  if (normalized === "stopped") return t("printerState.stopped");
-  if (normalized === "missing") return t("printerState.missing");
-  if (normalized === "offline") return t("printerState.offline");
-
-  return t("printerState.unknown");
-};
-
-const formatPrinterNetwork = (details: PrinterStatusDetails, t: Translator) => {
-  if (!details.networkChecked) {
-    return t("unknown");
-  }
-
-  const status =
-    details.networkReachable === true
-      ? t("connected")
-      : details.networkReachable === false
-        ? t("unreachable")
-        : t("unknown");
-  const endpoint = details.networkHost
-    ? details.networkPort
-      ? `${details.networkHost}:${details.networkPort}`
-      : details.networkHost
-    : "";
-
-  return endpoint ? `${status} (${endpoint})` : status;
-};
-
 const formatPageRangeInput = (
   pageRange: PrintSettings["pageRange"],
 ) => (pageRange === "all" ? "" : pageRange);
