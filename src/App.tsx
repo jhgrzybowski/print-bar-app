@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import {
   AlertTriangle,
+  Archive,
   ArchiveRestore,
   Ban,
   Check,
@@ -2108,6 +2109,8 @@ function PrinterSidebar({
   const queuedCount = chats.filter((chat) => chat.status === "queued").length;
   const selectedLanguage = getLanguage(language);
   const queueName = details.queueName ?? "Canon MG5350";
+  const isPrinterReachable =
+    backend.reachable && details.cupsAvailable !== false && status !== "offline";
   const latestChats = chats.filter((chat) => !archivedChatIds.has(chat.id));
   const archivedChats = chats.filter((chat) => archivedChatIds.has(chat.id));
 
@@ -2140,26 +2143,18 @@ function PrinterSidebar({
         </button>
       </div>
 
-      <dl className="printerMeta" aria-label={t("printerMetadata")}>
+      <dl className="printerMeta" aria-label={t("printerOverview")}>
+        <div>
+          <dt>{t("printerState")}</dt>
+          <dd>{getStatusLabel(status, t)}</dd>
+        </div>
         <div>
           <dt>{t("queue")}</dt>
           <dd>{queuedCount === 0 ? t("queueClear") : t("queueWaiting", { count: queuedCount })}</dd>
         </div>
         <div>
-          <dt>{t("backend")}</dt>
-          <dd>{backend.reachable ? t("connected") : t("unreachable")}</dd>
-        </div>
-        <div>
-          <dt>{t("printerState")}</dt>
-          <dd>{details.state ?? t("unknown")}</dd>
-        </div>
-        <div>
-          <dt>{t("lastSeen")}</dt>
-          <dd>
-            {backend.lastCheckedAt
-              ? formatTime(backend.lastCheckedAt, getLocale(language))
-              : t("unknown")}
-          </dd>
+          <dt>{t("reachable")}</dt>
+          <dd>{isPrinterReachable ? t("reachable.yes") : t("reachable.no")}</dd>
         </div>
       </dl>
       {backend.error || details.message || details.cupsError ? (
@@ -2207,7 +2202,7 @@ function PrinterSidebar({
               aria-label={t("archivePrint", { title: chat.title })}
               title={t("archivePrint", { title: chat.title })}
             >
-              <X size={13} />
+              <Archive size={13} />
             </button>
           </div>
         ))}

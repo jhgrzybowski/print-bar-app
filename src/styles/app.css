@@ -210,27 +210,31 @@
 
 .printerMeta {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 0;
   margin: 0;
+  padding: 3px 0;
+  border-top: 1px solid color-mix(in oklch, var(--sidebar-divider) 72%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--sidebar-divider) 72%, transparent);
 }
 
 .printerMeta div {
+  display: flex;
   min-width: 0;
-  padding: 9px;
-  background: var(--sidebar-card-bg);
-  border: 1px solid var(--sidebar-card-border);
-  border-radius: var(--radius-control);
-  box-shadow:
-    5px 6px 12px oklch(0.12 0.026 276 / 0.24),
-    -3px -3px 8px oklch(0.42 0.018 276 / 0.1),
-    inset 0 1px 0 var(--sidebar-inner-highlight);
+  padding: 7px 2px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.printerMeta div + div {
+  border-top: 1px solid color-mix(in oklch, var(--sidebar-divider) 52%, transparent);
 }
 
 .printerMeta dt {
-  margin: 0 0 4px;
+  margin: 0;
   color: var(--text-inverse-muted);
   font-size: 11px;
+  line-height: 1.35;
 }
 
 .printerMeta dd {
@@ -238,7 +242,9 @@
   overflow: hidden;
   color: var(--text-inverse);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -315,14 +321,17 @@
 }
 
 .flowRow {
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 3px;
+  align-items: center;
   min-width: 0;
 }
 
 .flowItem {
   width: 100%;
   min-width: 0;
-  padding: 11px 36px 11px 10px;
+  padding: 11px 10px;
   color: inherit;
   text-align: left;
   background: transparent;
@@ -359,18 +368,16 @@
 }
 
 .flowArchiveButton {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   min-height: 0;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(5px, -50%) scale(0.94);
+  color: color-mix(in oklch, var(--text-inverse-muted) 74%, transparent);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  opacity: 0.58;
   transition:
     opacity 150ms var(--ease-out-soft),
-    transform 150ms var(--ease-out-soft),
     background-color 150ms var(--ease-out-soft),
     border-color 150ms var(--ease-out-soft),
     color 150ms var(--ease-out-soft);
@@ -378,9 +385,15 @@
 
 .flowRow:hover .flowArchiveButton,
 .flowArchiveButton:focus-visible {
+  color: var(--text-inverse);
+  background: color-mix(in oklch, var(--sidebar-hover-bg) 68%, transparent);
+  border-color: color-mix(in oklch, var(--sidebar-hover-border) 68%, transparent);
   opacity: 1;
-  pointer-events: auto;
-  transform: translate(0, -50%) scale(1);
+}
+
+.flowArchiveButton:active {
+  background: var(--sidebar-active);
+  box-shadow: inset 2px 2px 5px oklch(0.12 0.026 276 / 0.18);
 }
 
 .flowTopline {
