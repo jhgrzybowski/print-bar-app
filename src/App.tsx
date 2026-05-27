@@ -582,6 +582,26 @@ const formatPrinterState = (state: string | undefined, t: Translator) => {
   return t("printerState.unknown");
 };
 
+const formatPrinterNetwork = (details: PrinterStatusDetails, t: Translator) => {
+  if (!details.networkChecked) {
+    return t("unknown");
+  }
+
+  const status =
+    details.networkReachable === true
+      ? t("connected")
+      : details.networkReachable === false
+        ? t("unreachable")
+        : t("unknown");
+  const endpoint = details.networkHost
+    ? details.networkPort
+      ? `${details.networkHost}:${details.networkPort}`
+      : details.networkHost
+    : "";
+
+  return endpoint ? `${status} (${endpoint})` : status;
+};
+
 const formatPageRangeInput = (
   pageRange: PrintSettings["pageRange"],
 ) => (pageRange === "all" ? "" : pageRange);
@@ -1503,6 +1523,10 @@ function App() {
           exists: status.exists,
           location: status.location,
           message: status.message,
+          networkChecked: status.network?.checked,
+          networkHost: status.network?.host,
+          networkPort: status.network?.port,
+          networkReachable: status.network?.reachable,
           queueName: status.queue_name,
           reasons: status.reasons,
           state: status.state,
@@ -2307,6 +2331,10 @@ function PrinterSidebar({
         <div>
           <dt>{t("printerState")}</dt>
           <dd>{formatPrinterState(details.state, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("printerNetwork")}</dt>
+          <dd>{formatPrinterNetwork(details, t)}</dd>
         </div>
         <div>
           <dt>{t("lastSeen")}</dt>
