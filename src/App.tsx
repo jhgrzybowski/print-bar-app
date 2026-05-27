@@ -947,7 +947,12 @@ const mapBackendStatus = (status?: PrinterStatusDto): PrinterStatus => {
     return "offline";
   }
 
-  if (!status.cups.available || !status.exists || status.state === "offline") {
+  if (
+    !status.cups.available ||
+    !status.exists ||
+    status.state === "offline" ||
+    status.network?.reachable === false
+  ) {
     return "offline";
   }
 
