@@ -92,6 +92,16 @@ const nonActionableBackendWarningPatterns = [
 const completedJobStates = new Set(["completed"]);
 const cancelledJobStates = new Set(["aborted", "canceled", "cancelled"]);
 const terminalJobStates = new Set([...completedJobStates, ...cancelledJobStates]);
+const offlinePrinterReasonTokens = [
+  "offline",
+  "not-connected",
+  "not connected",
+  "unreachable",
+  "connection-failed",
+  "connection failed",
+  "timed-out",
+  "timeout",
+];
 
 type PreviewSize = "compact" | "large";
 
@@ -546,6 +556,53 @@ const formatSafeNotice = (message: string, fallback: string) =>
     ? message
     : fallback;
 
+const normalizeNoticeText = (value: string) =>
+  value.trim().toLowerCase().replace(/[_\s]+/g, "-");
+
+const isOfflinePrinterReason = (reason: string) => {
+  const normalized = normalizeNoticeText(reason);
+
+  return offlinePrinterReasonTokens.some((token) =>
+    normalized.includes(token.replace(/\s+/g, "-")),
+  );
+};
+
+const formatPrinterState = (state: string | undefined, t: Translator) => {
+  if (!state) {
+    return t("printerState.unknown");
+  }
+
+  const normalized = state.trim().toLowerCase();
+
+  if (normalized === "idle") return t("printerState.idle");
+  if (normalized === "processing") return t("printerState.processing");
+  if (normalized === "stopped") return t("printerState.stopped");
+  if (normalized === "missing") return t("printerState.missing");
+  if (normalized === "offline") return t("printerState.offline");
+
+  return t("printerState.unknown");
+};
+
+const formatPrinterNetwork = (details: PrinterStatusDetails, t: Translator) => {
+  if (!details.networkChecked) {
+    return t("unknown");
+  }
+
+  const status =
+    details.networkReachable === true
+      ? t("connected")
+      : details.networkReachable === false
+        ? t("unreachable")
+        : t("unknown");
+  const endpoint = details.networkHost
+    ? details.networkPort
+      ? `${details.networkHost}:${details.networkPort}`
+      : details.networkHost
+    : "";
+
+  return endpoint ? `${status} (${endpoint})` : status;
+};
+
 const formatPageRangeInput = (
   pageRange: PrintSettings["pageRange"],
 ) => (pageRange === "all" ? "" : pageRange);
@@ -891,17 +948,26 @@ const mapBackendStatus = (status?: PrinterStatusDto): PrinterStatus => {
     return "offline";
   }
 
-  if (!status.cups.available || !status.exists) {
+  if (
+    !status.cups.available ||
+    !status.exists ||
+    status.state === "offline" ||
+    status.network?.reachable === false
+  ) {
+    return "offline";
+  }
+
+  const blockingReasons = status.reasons.filter(
+    (reason) => reason.trim().toLowerCase() !== "none",
+  );
+
+  if (blockingReasons.some(isOfflinePrinterReason)) {
     return "offline";
   }
 
   if (!status.enabled || status.state === "stopped" || status.state === "missing") {
     return "error";
   }
-
-  const blockingReasons = status.reasons.filter(
-    (reason) => reason.trim().toLowerCase() !== "none",
-  );
 
   if (status.accepting_jobs === false || blockingReasons.length > 0) {
     return "warning";
@@ -955,7 +1021,7 @@ const getJobDisplayName = (
   return localName || backendName || "Print job";
 };
 
-const getErrorMessage = (error: unknown) => {
+const getRawErrorMessage = (error: unknown) => {
   if (error instanceof PrinterApiError) {
     return error.message;
   }
@@ -965,6 +1031,65 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Unexpected printer backend error.";
+};
+
+const friendlyMessageFromText = (message: string, t: Translator, fallbackKey: TranslationKey) => {
+  const normalized = message.toLowerCase();
+
+  if (
+    /cups query failed|cups connection failed|failed to connect to server/.test(normalized)
+  ) {
+    return t("error.cupsUnavailable");
+  }
+
+  if (/failed to fetch|networkerror|cors|backend unreachable|load failed/.test(normalized)) {
+    return t("error.backendUnavailable");
+  }
+
+  if (/invalid json/.test(normalized)) {
+    return t("error.backendResponse");
+  }
+
+  if (/file not found/.test(normalized)) {
+    return t("error.fileNotFound");
+  }
+
+  if (/job not found/.test(normalized)) {
+    return t("error.jobNotFound");
+  }
+
+  return t(fallbackKey);
+};
+
+const getFriendlyErrorMessage = (
+  error: unknown,
+  t: Translator,
+  fallbackKey: TranslationKey = "error.requestFailed",
+) => friendlyMessageFromText(getRawErrorMessage(error), t, fallbackKey);
+
+const getSidebarNotice = (
+  backend: BackendConnectionState,
+  details: PrinterStatusDetails,
+  status: PrinterStatus,
+  t: Translator,
+) => {
+  if (backend.error) {
+    return t("notice.backendUnavailable");
+  }
+
+  if (details.cupsAvailable === false || status === "offline") {
+    return t("notice.printerOffline");
+  }
+
+  if (status === "error") {
+    return t("notice.printerError");
+  }
+
+  if (status === "warning") {
+    return t("notice.printerAttention");
+  }
+
+  return "";
 };
 
 const getDefaultMediaType = (capabilities: PrinterCapabilities): string =>
@@ -1191,6 +1316,7 @@ function App() {
   const [jobs, setJobs] = useState<PrintJob[]>([]);
   const [jobsError, setJobsError] = useState("");
   const [jobsLoading, setJobsLoading] = useState(false);
+  const backendRefreshSequence = useRef(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
@@ -1229,11 +1355,17 @@ function App() {
     "--workspace-header-bg": selectedProfile.workspaceHeaderBgColor,
   } as CSSProperties;
 
-  const unsupportedSelectedSettings = getUnsupportedSelectedSettings(
-    selectedChat.settings,
-    capabilities,
-    t,
-  );
+  const settingsAvailable =
+    backendConnection.reachable &&
+    printerStatus !== "offline" &&
+    printerStatus !== "error";
+  const unsupportedSelectedSettings = settingsAvailable
+    ? getUnsupportedSelectedSettings(
+        selectedChat.settings,
+        capabilities,
+        t,
+      )
+    : [];
   const canPrint = Boolean(
     selectedChat.file &&
       backendConnection.reachable &&
@@ -1355,15 +1487,19 @@ function App() {
         }),
       );
     } catch (error) {
-      setJobsError(getErrorMessage(error));
+      setJobsError(getFriendlyErrorMessage(error, t, "error.jobsUnavailable"));
       setJobs([]);
     } finally {
       setJobsLoading(false);
     }
-  }, [api]);
+  }, [api, t]);
 
   const refreshBackendState = useCallback(async () => {
+    const refreshId = backendRefreshSequence.current + 1;
+    backendRefreshSequence.current = refreshId;
     const checkedAt = new Date().toISOString();
+    const isCurrentRefresh = () => backendRefreshSequence.current === refreshId;
+
     setBackendConnection((current) => ({
       ...current,
       error: undefined,
@@ -1372,6 +1508,73 @@ function App() {
 
     try {
       const health = await api.health();
+
+      if (!isCurrentRefresh()) {
+        return;
+      }
+
+      try {
+        const status = await api.status();
+
+        if (!isCurrentRefresh()) {
+          return;
+        }
+
+        setPrinterStatus(mapBackendStatus(status));
+        setPrinterDetails({
+          acceptingJobs: status.accepting_jobs,
+          cupsAvailable: status.cups.available,
+          cupsError: status.cups.error,
+          enabled: status.enabled,
+          exists: status.exists,
+          location: status.location,
+          message: status.message,
+          networkChecked: status.network?.checked,
+          networkHost: status.network?.host,
+          networkPort: status.network?.port,
+          networkReachable: status.network?.reachable,
+          queueName: status.queue_name,
+          reasons: status.reasons,
+          state: status.state,
+        });
+      } catch (error) {
+        if (!isCurrentRefresh()) {
+          return;
+        }
+
+        const message = getFriendlyErrorMessage(error, t, "error.cupsUnavailable");
+        setPrinterStatus("offline");
+        setPrinterDetails({
+          cupsAvailable: false,
+          cupsError: message,
+          reasons: [],
+        });
+      }
+
+      try {
+        const options = await api.options();
+
+        if (!isCurrentRefresh()) {
+          return;
+        }
+
+        setCapabilities(mapCapabilities(options));
+        setOptionsError("");
+      } catch (error) {
+        if (!isCurrentRefresh()) {
+          return;
+        }
+
+        setCapabilities(fallbackCapabilities);
+        setOptionsError(getFriendlyErrorMessage(error, t, "optionsFallback"));
+      }
+
+      await refreshJobs();
+
+      if (!isCurrentRefresh()) {
+        return;
+      }
+
       setBackendConnection({
         baseUrl: api.baseUrl,
         isLoading: false,
@@ -1380,7 +1583,11 @@ function App() {
         service: health.service,
       });
     } catch (error) {
-      const message = getErrorMessage(error);
+      if (!isCurrentRefresh()) {
+        return;
+      }
+
+      const message = getFriendlyErrorMessage(error, t, "error.backendUnavailable");
       setBackendConnection({
         baseUrl: api.baseUrl,
         error: message,
@@ -1394,47 +1601,11 @@ function App() {
         cupsError: message,
         reasons: [],
       });
-      setOptionsError("Printer options are using safe defaults until the backend is reachable.");
+      setOptionsError(t("optionsFallback"));
       setJobs([]);
-      setJobsError(message);
-      return;
+      setJobsError(t("error.jobsUnavailable"));
     }
-
-    try {
-      const status = await api.status();
-      setPrinterStatus(mapBackendStatus(status));
-      setPrinterDetails({
-        acceptingJobs: status.accepting_jobs,
-        cupsAvailable: status.cups.available,
-        cupsError: status.cups.error,
-        enabled: status.enabled,
-        exists: status.exists,
-        location: status.location,
-        message: status.message,
-        queueName: status.queue_name,
-        reasons: status.reasons,
-        state: status.state,
-      });
-    } catch (error) {
-      setPrinterStatus("error");
-      setPrinterDetails({
-        cupsAvailable: false,
-        cupsError: getErrorMessage(error),
-        reasons: [],
-      });
-    }
-
-    try {
-      const options = await api.options();
-      setCapabilities(mapCapabilities(options));
-      setOptionsError("");
-    } catch (error) {
-      setCapabilities(fallbackCapabilities);
-      setOptionsError(getErrorMessage(error));
-    }
-
-    await refreshJobs();
-  }, [api, refreshJobs]);
+  }, [api, refreshJobs, t]);
 
   useEffect(() => {
     void refreshBackendState();
@@ -1657,7 +1828,7 @@ function App() {
         updatedAt: new Date().toISOString(),
       }));
     } catch (error) {
-      const message = getErrorMessage(error);
+      const message = getFriendlyErrorMessage(error, t, "error.previewFailed");
       updateChatById(chatId, (chat) => ({
         ...chat,
         actions: [
@@ -1723,7 +1894,11 @@ function App() {
         ...chat,
         actions: [
           ...chat.actions,
-          makeAction("error", "Upload failed", getErrorMessage(error)),
+          makeAction(
+            "error",
+            "Upload failed",
+            getFriendlyErrorMessage(error, t, "error.uploadFailed"),
+          ),
         ],
         status: "error",
         updatedAt: new Date().toISOString(),
@@ -1899,7 +2074,11 @@ function App() {
         ...chat,
         actions: [
           ...chat.actions,
-          makeAction("error", "Print failed", getErrorMessage(error)),
+          makeAction(
+            "error",
+            "Print failed",
+            getFriendlyErrorMessage(error, t, "error.printFailed"),
+          ),
         ],
         status: "ready",
         updatedAt: new Date().toISOString(),
@@ -1955,7 +2134,11 @@ function App() {
         ...chat,
         actions: [
           ...chat.actions,
-          makeAction("error", "Could not cancel print", getErrorMessage(error)),
+          makeAction(
+            "error",
+            "Could not cancel print",
+            getFriendlyErrorMessage(error, t, "error.cancelFailed"),
+          ),
         ],
         updatedAt: new Date().toISOString(),
       }));
@@ -2035,7 +2218,7 @@ function App() {
           canPrint={canPrint}
           disabledReason={disabledReason}
           unsupportedSelectedSettings={unsupportedSelectedSettings}
-          canEditSettings={isEditableChat(selectedChat)}
+          canEditSettings={isEditableChat(selectedChat) && settingsAvailable}
           isPrinting={isPrinting}
           isOpen={rightOpen}
           onClose={() => setRightOpen(false)}
@@ -2113,6 +2296,7 @@ function PrinterSidebar({
     backend.reachable && details.cupsAvailable !== false && status !== "offline";
   const latestChats = chats.filter((chat) => !archivedChatIds.has(chat.id));
   const archivedChats = chats.filter((chat) => archivedChatIds.has(chat.id));
+  const sidebarNotice = getSidebarNotice(backend, details, status, t);
 
   return (
     <aside className={`printerSidebar ${isOpen ? "isOpen" : ""}`}>
@@ -2157,10 +2341,10 @@ function PrinterSidebar({
           <dd>{isPrinterReachable ? t("reachable.yes") : t("reachable.no")}</dd>
         </div>
       </dl>
-      {backend.error || details.message || details.cupsError ? (
+      {sidebarNotice ? (
         <div className={`sidebarNotice sidebarNotice-${status}`}>
           <AlertTriangle size={14} aria-hidden="true" />
-          <p>{backend.error ?? details.cupsError ?? details.message}</p>
+          <p>{sidebarNotice}</p>
         </div>
       ) : null}
 
@@ -3140,6 +3324,8 @@ function PreferencesPanel({
     canEditColor &&
     (colorCapabilityChoices.length === 0 ||
       colorCapabilityChoices.includes("monochrome"));
+  const settingsBlocked = !backend.reachable || status === "offline" || status === "error";
+  const showCapabilityHints = !settingsBlocked;
 
   useEffect(() => {
     setCopiesInput(String(settings.copies));
@@ -3173,7 +3359,13 @@ function PreferencesPanel({
         </button>
       </div>
 
-      <div className="settingsStack">
+      <div
+        className={`settingsStack ${settingsBlocked ? "settingsStack-paused" : ""}`}
+        aria-disabled={settingsBlocked}
+      >
+        {settingsBlocked ? (
+          <p className="settingsPausedNotice">{t("notice.settingsPaused")}</p>
+        ) : null}
         <section className="settingsGroup">
           <h3>{t("pages")}</h3>
           <label className="field">
@@ -3244,7 +3436,7 @@ function PreferencesPanel({
               {t("grayscale")}
             </button>
           </div>
-          {!isCapabilitySupported(capabilities.colorModes) ? (
+          {showCapabilityHints && !isCapabilitySupported(capabilities.colorModes) ? (
             <p className="settingHint">{getCapabilityHint(capabilities.colorModes, "unsupportedOption", t)}</p>
           ) : null}
         </section>
@@ -3316,7 +3508,7 @@ function PreferencesPanel({
             />
             <span>{t("fitToPage")}</span>
           </label>
-          {[capabilities.paperSizes, capabilities.orientation, capabilities.duplexModes, capabilities.fitToPage].some((capability) => !isCapabilitySupported(capability)) ? (
+          {showCapabilityHints && [capabilities.paperSizes, capabilities.orientation, capabilities.duplexModes, capabilities.fitToPage].some((capability) => !isCapabilitySupported(capability)) ? (
             <p className="settingHint">{t("unsupportedOption")}</p>
           ) : null}
         </section>
@@ -3343,7 +3535,7 @@ function PreferencesPanel({
               ))}
             </select>
           </label>
-          {!isCapabilitySupported(capabilities.quality) ? (
+          {showCapabilityHints && !isCapabilitySupported(capabilities.quality) ? (
             <p className="settingHint">{getCapabilityHint(capabilities.quality, "unsupportedOption", t)}</p>
           ) : null}
         </section>
@@ -3386,15 +3578,15 @@ function PreferencesPanel({
             />
             <span>{t("collate")}</span>
           </label>
-          {!isCapabilitySupported(capabilities.collate) ? (
+          {showCapabilityHints && !isCapabilitySupported(capabilities.collate) ? (
             <p className="settingHint">{getCapabilityHint(capabilities.collate, "unsupported.collate", t)}</p>
           ) : null}
-          {optionsError ? (
+          {showCapabilityHints && optionsError ? (
             <p className="settingHint">
               {formatSafeNotice(optionsError, t("optionsFallback"))}
             </p>
           ) : null}
-          {unsupportedSelectedSettings.length > 0 ? (
+          {showCapabilityHints && unsupportedSelectedSettings.length > 0 ? (
             <p className="settingHint">
               {t("unsupportedSelectedSettings", {
                 settings: unsupportedSelectedSettings.join(", "),

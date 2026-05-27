@@ -110,6 +110,10 @@ export type PrinterStatusDetails = {
   exists?: boolean;
   location?: string | null;
   message?: string;
+  networkChecked?: boolean;
+  networkHost?: string | null;
+  networkPort?: number | null;
+  networkReachable?: boolean | null;
   queueName?: string;
   reasons: string[];
   state?: string;

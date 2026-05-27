@@ -98,6 +98,28 @@ const en = {
   "duplex.longEdge": "Long edge",
   "duplex.none": "None",
   "duplex.shortEdge": "Short edge",
+  "error.backendResponse":
+    "The printer service sent a response this app could not read. Refresh and try again.",
+  "error.backendUnavailable":
+    "The printer service is not reachable. Check that local_printer_api is running, then refresh.",
+  "error.cancelFailed":
+    "The job could not be cancelled. Refresh jobs and try again.",
+  "error.cupsUnavailable":
+    "The printer cannot be reached yet. Check that it is powered on and connected to the network, then refresh.",
+  "error.fileNotFound":
+    "That file is no longer available. Upload it again before printing.",
+  "error.jobNotFound":
+    "That job is no longer in the queue. Refresh jobs to update the list.",
+  "error.jobsUnavailable":
+    "Jobs are unavailable right now. Refresh after the printer service is online.",
+  "error.previewFailed":
+    "Preview could not be generated. The file is still selected; refresh or upload it again.",
+  "error.printFailed":
+    "The print job was not sent. Check the printer status, then try again.",
+  "error.requestFailed":
+    "The printer service could not complete that request. Refresh and try again.",
+  "error.uploadFailed":
+    "The file could not be uploaded. Check the printer service, then try again.",
   "fitToPage": "Fit to page",
   "flow": "Flow",
   "flowStatus.cancelled": "Cancelled",
@@ -134,6 +156,14 @@ const en = {
   "next": "Next",
   "noJobs": "No jobs in this queue.",
   "noFileSelectedYet": "No file selected yet",
+  "notice.backendUnavailable":
+    "The printer service is offline. Start local_printer_api, then refresh.",
+  "notice.printerAttention":
+    "The printer is online but needs attention before printing.",
+  "notice.printerError": "The printer queue needs attention before printing.",
+  "notice.printerOffline":
+    "The printer is offline or still waking up. Turn it on, wait a moment, then refresh.",
+  "notice.settingsPaused": "Printing settings are paused until the printer is online.",
   "option.high": "High",
   "option.draft": "Document",
   "option.landscape": "Landscape",
@@ -170,7 +200,7 @@ const en = {
   "previewReadyGuidance.description":
     "Review the simulated sheet, page range, and settings before printing.",
   "previewReadyGuidance.title": "Preview ready",
-  "previewSimulation": "Preview simulation. The uploaded file is unchanged.",
+  "previewSimulation": "Backend preview. The uploaded file is unchanged.",
   "previewSize": "Preview size",
   "previewSize.compact": "Compact",
   "previewSize.large": "Large",
@@ -342,6 +372,28 @@ const pl: Record<keyof typeof en, string> = {
   "duplex.longEdge": "Długa krawędź",
   "duplex.none": "Brak",
   "duplex.shortEdge": "Krótka krawędź",
+  "error.backendResponse":
+    "Usługa drukarki zwróciła odpowiedź, której aplikacja nie mogła odczytać. Odśwież i spróbuj ponownie.",
+  "error.backendUnavailable":
+    "Usługa drukarki jest niedostępna. Sprawdź, czy local_printer_api działa, a potem odśwież.",
+  "error.cancelFailed":
+    "Nie udało się anulować zadania. Odśwież listę zadań i spróbuj ponownie.",
+  "error.cupsUnavailable":
+    "Nie można jeszcze połączyć się z drukarką. Sprawdź, czy jest włączona i w sieci, a potem odśwież.",
+  "error.fileNotFound":
+    "Ten plik nie jest już dostępny. Prześlij go ponownie przed drukowaniem.",
+  "error.jobNotFound":
+    "Tego zadania nie ma już w kolejce. Odśwież zadania, aby zaktualizować listę.",
+  "error.jobsUnavailable":
+    "Zadania są teraz niedostępne. Odśwież, gdy usługa drukarki będzie online.",
+  "error.previewFailed":
+    "Nie udało się wygenerować podglądu. Plik pozostaje wybrany; odśwież albo prześlij go ponownie.",
+  "error.printFailed":
+    "Zadanie nie zostało wysłane do drukarki. Sprawdź status drukarki i spróbuj ponownie.",
+  "error.requestFailed":
+    "Usługa drukarki nie mogła zakończyć tej operacji. Odśwież i spróbuj ponownie.",
+  "error.uploadFailed":
+    "Nie udało się przesłać pliku. Sprawdź usługę drukarki i spróbuj ponownie.",
   "fitToPage": "Dopasuj do strony",
   "flow": "Wydruk",
   "flowStatus.cancelled": "Anulowany",
@@ -379,6 +431,14 @@ const pl: Record<keyof typeof en, string> = {
   "next": "Dalej",
   "noJobs": "Brak zadań w tej kolejce.",
   "noFileSelectedYet": "Nie wybrano jeszcze pliku",
+  "notice.backendUnavailable":
+    "Usługa drukarki jest offline. Uruchom local_printer_api, a potem odśwież.",
+  "notice.printerAttention":
+    "Drukarka jest online, ale wymaga uwagi przed drukowaniem.",
+  "notice.printerError": "Kolejka drukarki wymaga uwagi przed drukowaniem.",
+  "notice.printerOffline":
+    "Drukarka jest offline albo jeszcze się uruchamia. Włącz ją, poczekaj chwilę i odśwież.",
+  "notice.settingsPaused": "Ustawienia druku są wstrzymane, dopóki drukarka nie będzie online.",
   "option.high": "Wysoka",
   "option.draft": "Dokument",
   "option.landscape": "Pozioma",
@@ -415,7 +475,7 @@ const pl: Record<keyof typeof en, string> = {
   "previewReadyGuidance.description":
     "Sprawdź symulowaną kartkę, zakres stron i ustawienia przed drukowaniem.",
   "previewReadyGuidance.title": "Podgląd gotowy",
-  "previewSimulation": "Symulacja podglądu. Przesłany plik pozostaje bez zmian.",
+  "previewSimulation": "Podgląd z backendu. Przesłany plik pozostaje bez zmian.",
   "previewSize": "Rozmiar podglądu",
   "previewSize.compact": "Kompaktowy",
   "previewSize.large": "Duży",
