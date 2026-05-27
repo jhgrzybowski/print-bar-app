@@ -36,6 +36,14 @@ export type CupsStatusDto = {
   error?: string | null;
 };
 
+export type PrinterNetworkStatusDto = {
+  checked: boolean;
+  error?: string | null;
+  host?: string | null;
+  port?: number | null;
+  reachable?: boolean | null;
+};
+
 export type PrinterStatusDto = {
   accepting_jobs?: boolean | null;
   cups: CupsStatusDto;
@@ -44,6 +52,7 @@ export type PrinterStatusDto = {
   exists: boolean;
   location?: string | null;
   message?: string;
+  network?: PrinterNetworkStatusDto;
   queue_name: string;
   reasons: string[];
   state: string;

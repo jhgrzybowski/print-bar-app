@@ -1689,6 +1689,22 @@
   padding: 16px 18px;
 }
 
+.settingsStack-paused .settingsGroup {
+  opacity: 0.58;
+}
+
+.settingsPausedNotice {
+  margin: 0;
+  padding: 9px 10px;
+  color: var(--text-secondary);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  line-height: 1.42;
+  box-shadow: var(--shadow-pressed);
+}
+
 .settingsGroup {
   display: grid;
   gap: 9px;
