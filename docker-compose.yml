@@ -31,7 +31,7 @@ services:
       MAX_UPLOAD_MB: "50"
       PREVIEW_DPI: "110"
     volumes:
-      - /run/cups/cups.sock:/run/cups/cups.sock
+      - /run/cups:/run/cups
       - printer-backend-tmp:/var/tmp/printer-backend
     restart: unless-stopped
     healthcheck:
