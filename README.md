@@ -77,7 +77,7 @@ docker compose up -d --build
 Then open:
 
 ```text
-http://192.168.100.99:8080
+http://192.168.100.99/
 ```
 
 Full deployment and verification details are in `DEPLOYMENT_DOCKER.md`.
