@@ -9,7 +9,7 @@ services:
       local-printer-api:
         condition: service_started
     ports:
-      - "8080:8080"
+      - "80:8080"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
@@ -28,11 +28,14 @@ services:
       BACKEND_HOST: 192.168.100.99
       BACKEND_PORT: "8000"
       TMP_DIR: /var/tmp/printer-backend
+      DB_PATH: /var/lib/local-printer-api/app.db
       MAX_UPLOAD_MB: "50"
       PREVIEW_DPI: "110"
+      CORS_ALLOWED_ORIGINS: http://192.168.100.99,http://192.168.100.99:80,http://ubuntu26-remote.local,http://ubuntu26-remote.local:80,http://drukarka.local,http://drukarka.local:80,http://192.168.100.99:5173,http://ubuntu26-remote.local:5173,http://localhost:5173,http://127.0.0.1:5173
     volumes:
       - /run/cups:/run/cups
       - printer-backend-tmp:/var/tmp/printer-backend
+      - printer-backend-db:/var/lib/local-printer-api
     restart: unless-stopped
     healthcheck:
       test:
@@ -47,3 +50,4 @@ services:
 
 volumes:
   printer-backend-tmp:
+  printer-backend-db:
